@@ -1,0 +1,13 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=2680
+
+cursoroverdictionary is a Vim plugin to look up word or idiom in English-Japanese Dictionary.
+(For a beginner of English such as me.)
+
+Screencast: http://www.youtube.com/watch?v=eb8khHL8I7Q
+
+Requirements:
+- Vim 7.0 or later
+- Python
+http://www.python.org/download/
+- Dictionary data(PDIC 1 line text format)
+
