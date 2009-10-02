@@ -1,147 +1,303 @@
-*cursoroverdictionary.txt*	�p�����������X�N���v�g
+*cursoroverdictionary.txt*	辞書引き+αスクリプト
 
-Last change: 2009 Jan 29
-Version : 0.0.1
+Last change: 2009 Oct 02
+Version : 0.0.5
 Copyright (C) 2009 ampmmn <http://d.hatena.ne.jp/ampmmn>
 
-�ڎ�:
-  ����͉���................|cod-introduction|
-  �g����....................|cod-usage|
-  �R�}���h..................|cod-function|
-  �O���[�o���ϐ�............|cod-variables|
-  �}�b�s���O................|cod-mapping|
+目次:
+  これは何か................|cod-introduction|
+  基本的な使い方............|cod-usage|
+  コマンド..................|cod-function|
+  グローバル変数............|cod-variables|
+  マッピング................|cod-mapping|
+  外部検索エンジンの登録....|cod-register-external|
+  オペレータ登録............|cod-operator|
   CHANGELOG.................|cod-changelog|
 
 ==============================================================================
-����͉���				*cod-introduction*
+これは何か				*cod-introduction*
 
-�p���Y�f�[�^(�Ƃ������APDIC1�s�`�������f�[�^)���g���āA
-�J�[�\����ɂ���P����������߂̃X�N���v�g�ł��B
+PDICテキスト形式，またはPDIC1行テキスト形式の辞書データを使って、
+カーソル上にある単語を引くためのスクリプトです。
+辞書データは、英辞郎から変換したもの、またはGENE辞書を使うことを主に想定しています。
 
-Firefox�̑f�G�ȃA�h�I���uMouseover Dictionary�v�̃A�C�f�A�����̂܂�Vim���
-�����Ă����A�Ƃ����㕨�ł��B
+Firefoxの素敵なアドオン「Mouseover Dictionary」のアイデアをそのままVim上に
+持ってきた、という代物です。
 http://maru.bonyari.jp/mouseoverdictionary/
 
-Mouseover Dictionary�̓}�E�X�I�[�o�[�����P���\������A�Ƃ������̂ł����A
-���̃X�N���v�g�ł́A�J�[�\����ɂ���P���\�����܂��B
+Mouseover Dictionaryはマウスオーバーした単語を表示する、というものですが、
+このスクリプトでは、カーソル上にある単語を表示します。
+また、0.0.5以降では外部の検索エンジンを指定することで、
+指定したWebサイトから単語の意味を検索することができるようになりました。
 
-�ł��邱��
-- �J�[�\����̒P��������ŕ\��
-- �r�W���A�����[�h�őI�������P��E���𒲂ׂ�
-- �R�}���h���C������w�肵���P��E���𒲂ׂ�
+できること
+- カーソル上の単語の意味をカーソル移動に追従して自動で表示
+- ビジュアルモードで選択した単語・語句を(内部データベース|外部Webサイト)から検索
+- コマンドラインから指定した単語・語句を(内部データベース|外部Webサイト)から検索
 
-�K�v�Ȋ��E��:
-- Vim 7.0�ȍ~
-- +python�I�v�V����(sqlite3�A�܂���sqlite�p�b�P�[�W�����p�\�ł��邱��)
-- ��荞�ނ��߂�PDIC1�s�����f�[�^
-- HDD�󂫗e��(���ɂ��قȂ�܂��B200MB���炢����ƈ��S)
+必要な環境・物:
+- Vim 7.0以降
 
-==============================================================================
-�g����					*cod-usage*
+(カーソルオーバー辞書機能を利用する場合)
+- +pythonオプション(sqlite3、またはsqliteパッケージが利用可能であること)
+- 取り込むためのPDIC1行辞書データ(英辞郎,GENE辞書など)
+- HDD空き容量(環境・使用する辞書により異なります。200MBくらいあると安心)
 
-1. �����f�[�^�̓o�^
-���p����ɂ͍ŏ���PDIC1�s�`���̎����t�@�C�����A���̃X�N���v�g���g�p����
-�����f�[�^�x�[�X�ɓo�^����K�v������܂��B
+(外部検索機能を利用する場合)
+- cURL(パスを設定しておく必要があります)
 
-PDIC1�s�`�������f�[�^�t�@�C����p�ӂ��A
-:CODRegistDict {�����t�@�C���̃p�X} �����s���Ă��������B
-CODRegistDict�R�}���h�����s����ƁA�����f�[�^���f�[�^�x�[�X�t�@�C����
-�o�^���܂��B
-
-�p���Y��O�ł̎����t�@�C����o�^�����ꍇ�A�f�[�^�x�[�X�t�@�C���̃T�C�Y�͖�
-170MByte�قǂɂȂ�܂��B(Windows���̏ꍇ)
-
-�f�[�^�x�[�X�t�@�C����~/.cursoroverdictionary_db�ɍ쐬����܂��B
-(g:CODDatabasePath�ŕύX�\)
-
-���ӓ_�Ƃ��āA�o�^����PDIC1�s�`�������t�@�C���̕����R�[�h��Vim�����̕����G��
-�R�[�f�B���O����v���Ă���K�v������܂��B
-��v���Ă��Ȃ��ꍇ�A��������������o�^���ɃG���[���N�������肵�܂��B
-
-2. �o�̓E�C���h�E��\������
-�����f�[�^�̓o�^����������΁A���p�\�ȏ�ԂɂȂ�܂��B
-CODOpen�R�}���h�����s����ƁA�󕶂�\�����邽�߂̏o�̓E�C���h�E���\������܂��B
-���Ƃ́A�J�[�\�����ړ����邾���ŁA�J�[�\����ɂ���P��̖󕶂��o�̓E�C���h�E��
-�ɕ\������܂��B
+(operator-userを使ってoperator登録する場合)
+- operator-user(http://www.vim.org/scripts/script.php?script_id=2692)
 
 ==============================================================================
-�R�}���h				*cod-function*
+基本的な使い方				*cod-usage*
+
+1. 辞書データの登録
+利用するには最初にPDIC1行形式の辞書ファイルを、このスクリプトが使用する
+内部データベースに登録する必要があります。
+
+PDICテキスト形式、またはPDIC1行テキスト形式辞書データファイルを用意し、
+:CODRegistDict {辞書ファイルのパス} を実行してください。
+CODRegistDictコマンドを実行すると、辞書データをデータベースファイルに
+登録します。
+
+英辞郎第三版の辞書ファイルを登録した場合、データベースファイルのサイズは約
+170MByteほどになります。(Windows環境の場合)
+GENE辞書ファイルを登録した場合のデータベースファイルのサイズは約5Mbyteほどで
+す。
+
+データベースファイルは~/.cursoroverdictionary_dbに作成されます。
+(g:CODDatabasePathで変更可能)
+
+注意点として、登録する辞書ファイルの文字コードとVim内部の文字エンコーディングが
+一致している必要があります。
+一致していない場合、文字化けしたり登録時にエラーが起こったりします。
+
+2. 出力ウインドウを表示する
+辞書データの登録が完了すれば、利用可能な状態になります。
+CODOpenコマンドを実行すると、訳文を表示するための出力ウインドウが表示されます。
+あとは、カーソルを移動するだけで、カーソル上にある単語の訳文が出力ウインドウ上
+に表示されます。
+
+==============================================================================
+コマンド				*cod-function*
 
 :CODOpen 				*:CODOpen*
-	�o�̓E�C���h�E��\�����܂��B
-	�o�̓E�C���h�E�����łɕ\������Ă���ꍇ�͉������܂���B
+	出力ウインドウを表示します。
+	出力ウインドウがすでに表示されている場合は何もしません。
 
 :CODClose				*:CODClose*
-	�o�̓E�C���h�E����܂��B�o�̓E�C���h�E���Ȃ��ꍇ�ɂ͉������܂���B
+	出力ウインドウを閉じます。出力ウインドウがない場合には何もしません。
 
 :CODToggle				*:CODToggle*
-	�o�̓E�C���h�E���\������Ă��鎞�ɂ̓E�C���h�E����A
-	�����łȂ��Ƃ��ɂ͏o�̓E�C���h�E��\�����܂��B
+	出力ウインドウが表示されている時にはウインドウを閉じ、
+	そうでないときには出力ウインドウを表示します。
 
 :CODRegistDict[!]  {file} 		*:CODRegistDict*
-	PDIC1�s�`�������t�@�C��{file}��ǂݍ��݁A�����f�[�^�x�[�X���쐬���܂��B
-	!���w�肷��ƁA�����̓����f�[�^�x�[�X�ɏd������L�[���[�h�����݂����
-	���ɏ㏑�����܂��B
-	!���w�肹���A�L�[���[�h�̏d�����������ꍇ�ɂ̓G���[�ƂȂ�܂��B
+	PDIC1行形式辞書ファイル{file}を読み込み、内部データベースを作成します。
+	!を指定すると、既存の内部データベースに重複するキーワードが存在する場
+	合に上書きします。
+	!を指定せず、キーワードの重複があった場合にはエラーとなります。
 	
-	�Ȃ��A�o�^����PDIC1�s�`�������t�@�C���̕����R�[�h�́AVim�����Ŏg����G���R�[
-	�f�B���O(encoding�I�v�V�����̒l)�ƈ�v���Ă���K�v������܂��B
+	なお、登録するPDIC1行形式辞書ファイルの文字コードは、Vim内部で使われるエンコー
+	ディング(encodingオプションの値)と一致している必要があります。
 
 :CODSelected				*:CODSelected*
-	�I�������e�L�X�g�Ŏ����������܂��B
-	�����̒P���I�����Ď��s���邱�Ƃɂ��A�����������邱�Ƃ��ł��܂��B
+	選択したテキストを内部データベースを使って辞書検索します。
+	複数の単語を選択して実行することにより、(単語ではなく)語句を検索することもできます。
 
-:CODSearch [keyword]			*:CODSearch*
-	[keyword]�������������܂��B
-	[keyword]���w�肵�Ȃ������ꍇ�́A�P�����͂���v�����v�g���\�������
-	���B
+:CODSearch {external-engine} [keyword]	*:CODSearch*
+	[keyword]を内部データベースを使って辞書検索します。
+	[keyword]を指定しなかった場合は、単語を入力するプロンプトが表示されま
+	す。
 
+:CODSelectedEx				*:CODSelectedEx*
+	あらかじめ設定した外部検索エンジンを使って、選択したテキストを検索します。
+	複数の単語を選択して実行することにより、(単語ではなく)語句を検索することもできます。
+
+:CODSearchEx {external-engine} [keyword]	*:CODSearchEx*
+	あらかじめ設定した外部検索エンジンを使って[keyword]を辞書検索します。
+	[keyword]を指定しなかった場合は、単語を入力するプロンプトが表示されま
+	す。
 
 ==============================================================================
-�O���[�o���ϐ�				*cod-variables*
+グローバル変数				*cod-variables*
 
 g:CODDatabasePath			*g:CODDatabasePath*
-	�����f�[�^�x�[�X�̃p�X���w�肵�܂��B
-	����l�� ~/.cursoroverdictionary_db �ł��B
+	内部データベースのパスを指定します。
+	既定値は ~/.cursoroverdictionary_db です。
 
 g:CODDirection				*g:CODDirection*
-	�o�̓E�C���h�E�ɕ\����������ł��B
-	����l��:rightbelow�ł��B
+	出力ウインドウに表示する方向です。
+	既定値は:rightbelowです。
 
 g:CODWindowHeight			*g:CODWindowHeight*
-	�o�̓E�C���h�E�\�����̍���(�����������͕�)�ł��B
-	����l��10�ł��B
+	出力ウインドウ表示時の高さ(垂直分割時は幅)です。
+	既定値は10です。
 
 g:CODAdditionalStemmingPatterns		*g:CODAdditionalStemmingPatterns*
-	�X�e�~���O�̍ۂ́A�Ǝ��ɒu������p�^�[�����w�肷�邽�߂̃��X�g�ł��B
-	�P�ꂪ�A���̃��X�g�̃p�^�[���ƈ�v�����ꍇ�ɁA�u����̒P��Ŏ���������
-	�s���܂��B
+	ステミングの際の、独自に置換するパターンを指定するためのリストです。
+	単語が、このリストのパターンと一致した場合に、置換後の単語で辞書検索を
+	行います。
 
-	�Ⴆ�΁A
+	例えば、
 	g:CODAdditionalStemmingPatterns = [ ['ies$', 'y'] ]
-	�Ǝw�肵�Ă���ꍇ�A�ustudies�v�Ƃ����P��́ustudy�v�ɕϊ�����܂��B
+	と指定してある場合、「studies」という単語は「study」に変換されます。
 
-	�����Ŏw�肷��p�^�[���́APython�ł̐��K�\���`���ł���K�v������܂��B
-	(Vim�`���ł͂Ȃ��̂Œ���)
+	ここで指定するパターンは、Pythonでの正規表現形式である必要があります。
+	(Vim形式ではないので注意)
+
+g:CODDisableCursorMoveUpdate		*g:CODDisableCursorMoveUpdate*
+	カーソルオーバー辞書機能を利用しない場合に設定します。
+	この変数を0以外の値に設定すると、カーソル移動時に
+	出力ウインドウの内容を更新しなくなります。
 
 ==============================================================================
-�}�b�s���O				*cod-mapping*
+マッピング				*cod-mapping*
 
-���ɂ��̃X�N���v�g���Őݒ肵�Ă���}�b�s���O�͂���܂���B
+特にこのスクリプト側で設定しているマッピングはありません。
 
-.vimrc�ŉ��L�̂悤�ɐݒ肵�Ă����΁A�I�������P��E�����ȒP�ɒ��ׂ���悤��
-�Ȃ��ĕ֗��ł��B
+.vimrcで下記のように設定しておけば、選択した単語・語句を簡単に調べられるように
+なって便利です。
 
-	vnoremap <silent> {�C�ӂ̃L�[} :<c-u>CODSelected<cr>
+	vnoremap <silent> {任意のキー} :<c-u>CODSelected<cr>
 
-���Ƃ́ACODToggle�R�}���h���}�b�v���Ă����΁A�ȒP�ɏo�̓E�C���h�E��\��/��\��
-�ɂ��邱�Ƃ��ł��܂��B
+あとは、CODToggleコマンドをマップしておけば、簡単に出力ウインドウを表示/非表示
+にすることができます。
 
-	nnoremap <silent> {�C�ӂ̃L�[} :CODToggle<cr>
+	nnoremap <silent> {任意のキー} :CODToggle<cr>
+
+==============================================================================
+外部検索エンジンの登録			*cod-register-external*
+
+外部検索エンジンの登録は下記の関数を用いて行います。
+
+
+cursoroverdictionary#add(name, url, urlenc, siteenc)
+	外部検索エンジンを登録します。
+	
+	name		(文字列)
+		検索エンジンの名前です。
+		ここで指定した名前で検索エンジンの識別を行います。
+	
+	url		(文字列)
+		アクセス先のURLを指定します。
+		{word}と書くと、その部分が選択文字列に置換されます。
+	
+	urlenc		(文字列)
+		URL文字列をエスケープする際のエンコード方法を指定します。
+	
+	siteenc		(文字列)
+		取得した結果のエンコード形式を指定します。
+
+cursoroverdictionary#set_trim_pattern(name, start, end)
+	取得した結果から、必要な部分を切り出すためのパターンを指定します。
+	startのパターンに一致した位置の直後から、
+	endのパターンに一致した直前の位置までのデータを
+	結果表示のために使用します。
+	
+	name		(文字列)
+		検索エンジンの名前です。
+		cursoroverdictionary#add関数で登録した名前です。
+	
+	start		(文字列)
+		開始位置のパターン
+
+	end		(文字列)
+		終了位置のパターン
+
+
+cursoroverdictionary#enable_proxy(name, proxy)
+	サイトにアクセスする際にプロキシを使う場合に、
+	プロキシサーバを指定するために使用します。
+	
+	name		(文字列)
+		検索エンジンの名前です。
+		cursoroverdictionary#add関数で登録した名前です。
+	
+	proxy		(文字列)
+		プロキシサーバを「ホスト名:ポート番号」の形式で指定します。
+		例: proxyhost:8080
+
+cursoroverdictionary#set_user_agent(name, agent-name)
+	サイトにアクセスする際のUser-Agent文字列を指定します。
+	このスクリプトでは、外部サイトへのアクセスする処理でcURLを
+	使っていますが、アクセス先のサイトによってはUser-Agentの内容で
+	処理を受け付けないところもあります。
+	その場合は、この関数でUser-Agentを設定することによって、
+	現象を回避することができます。
+	
+	この関数で指定しなかった場合は、cURLのデフォルトのUser-Agentを
+	使用します。
+	
+	name		(文字列)
+		検索エンジンの名前です。
+		cursoroverdictionary#add関数で登録した名前です。
+	
+	agent-name	(文字列)
+		User-Agent名を指定します。
+
+cursoroverdictionary#set_default_engine(name)
+	:CODSelectedコマンド、:CODSearchコマンドを使った検索では
+	基本的には事前に登録した内部データベースを用いて検索を行いますが、
+	ここでの検索で一致する結果が得られなかった場合に、
+	cursoroverdictionary#set_default_engine関数で指定した外部検索エンジンを
+	使って、検索を再試行することができます。
+	
+	name		(文字列)
+		検索エンジンの名前です。
+		cursoroverdictionary#add関数で登録した名前です。
+
+例:
+	" Wikipedia日本語版で検索
+	call cursoroverdictionary#add("wp",
+	\ "http://ja.wikipedia.org/wiki/{word}", "utf-8", "utf-8")
+	call cursoroverdictionary#set_trim_pattern("wp",
+	\ '<div id="bodyContent">', '\t\t</div>')
+
+	" Wikipedia英語版で検索
+	call cursoroverdictionary#add("wp_en", 
+	\ "http://en.wikipedia.org/wiki/{word}", "utf-8", "utf-8")
+	call cursoroverdictionary#set_trim_pattern("wp_en",
+	\ '<div id="bodyContent">', '\t\t</div>')
+
+	" 
+	call cursoroverdictionary#set_default_engine("wp")
+
+==============================================================================
+オペレータ登録				*cod-operator*
+
+このスクリプトは、operator-userのフレームワークの下で動作させることができま
+す。
+もし、使用している環境にoperator-userが入っていれば、外部検索機能をoperatorと
+して実行することができます。
+
+例:
+.vimrcに下記のように設定したとします。
+
+----
+call cursoroverdictionary#add('wp', 'http://ja.wikipedia.org/wiki/{word}',
+ \ 'utf-8', 'utf-8')
+call cursoroverdictionary#set_trim_pattern('wp', '<div id="bodyContent">',
+ \ '\t\t</div>')
+
+call cursoroverdictionary#add_operator_user('wp')
+map W <Plug>(operator-cod-wp)
+----
+
+
+すると、W+|{motion}|で、対象のテキストをWikipediaで検索し、
+その結果を出力ウインドウで表示することができます。
+また、ビジュアルモードで選択した状態からWキーで、選択したテキストを検索すること
+もできます。
 
 ==============================================================================
 CHANGELOG				*cod-changelog*
 
+	0.0.5		2009-10-02	Several features added.
+	0.0.4		2009-09-29	Add support for PDIC Text Format
+	0.0.3		2009-03-12	bug fix.
+	0.0.2		2009-02-03	minor change.
 	0.0.1		2009-01-28	1st release.
 ==============================================================================
 vim:ts=8 sw=8 noexpandtab tw=78 ft=help:
