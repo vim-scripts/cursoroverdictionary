@@ -1,12 +1,14 @@
 " cursoroverdictionary.vim -- カーソル位置の英単語訳を表示
 " 
-" version : 0.0.5
+" version : 0.0.7
 " author : ampmmn(htmnymgw <delete>@<delete> gmail.com)
 " url    : http://d.hatena.ne.jp/ampmmn
 "
 " ----
 " history
-"	 0.0.5		2009-10-0X	Several features added.
+"	 0.0.7		2009-10-03	bug fix
+"	 0.0.6		2009-10-02	minor change.
+"	 0.0.5		2009-10-02	Several features added.
 "	 0.0.4		2009-09-29	Add support for PDIC Text Format
 "	 0.0.3		2009-03-12	bug fix.
 "	 0.0.2		2009-02-03	minor change.

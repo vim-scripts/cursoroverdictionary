@@ -1,7 +1,7 @@
 *cursoroverdictionary.txt*	辞書引き+αスクリプト
 
-Last change: 2009 Oct 02
-Version : 0.0.5
+Last change: 2009 Oct 03
+Version : 0.0.7
 Copyright (C) 2009 ampmmn <http://d.hatena.ne.jp/ampmmn>
 
 目次:
@@ -280,8 +280,6 @@ call cursoroverdictionary#add('wp', 'http://ja.wikipedia.org/wiki/{word}',
  \ 'utf-8', 'utf-8')
 call cursoroverdictionary#set_trim_pattern('wp', '<div id="bodyContent">',
  \ '\t\t</div>')
-
-call cursoroverdictionary#add_operator_user('wp')
 map W <Plug>(operator-cod-wp)
 ----
 
@@ -294,6 +292,8 @@ map W <Plug>(operator-cod-wp)
 ==============================================================================
 CHANGELOG				*cod-changelog*
 
+	0.0.7		2009-10-03	bug fix
+	0.0.6		2009-10-02	minor change.
 	0.0.5		2009-10-02	Several features added.
 	0.0.4		2009-09-29	Add support for PDIC Text Format
 	0.0.3		2009-03-12	bug fix.

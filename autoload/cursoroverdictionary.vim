@@ -1,6 +1,6 @@
 " cursoroverdictionary.vim -- カーソル位置の英単語訳を表示
 " 
-" version : 0.0.5
+" version : 0.0.7
 " author : ampmmn(htmnymgw <delete>@<delete> gmail.com)
 " url    : http://d.hatena.ne.jp/ampmmn
 "
@@ -890,6 +890,8 @@ function! cursoroverdictionary#add(name, url, urlenc, siteenc) "{{{
 	let context.url = a:url
 	let context.url_encode = a:urlenc
 	let context.site_encode = a:siteenc
+
+	call s:add_operator_user(a:name)
 endfunction
 "}}}
 
@@ -985,13 +987,13 @@ endfunction
 "}}}
 
 " 任意の検索エンジンによる検索処理をoperator-userから呼び出せるようにします
-function! cursoroverdictionary#add_operator_user(name) "{{{
+function! s:add_operator_user(name) "{{{
 
 	if s:has_external_engine(a:name) == 0
 		return 0
 	endif
 
-	call operator#user#define('cod-' . a:name, 'cursoroverdictionary#operator_default', "call cursoroverdictionary#set_engine_in_operator_user('" . a:name . "')")
+	silent! call operator#user#define('cod-' . a:name, 'cursoroverdictionary#operator_default', "call cursoroverdictionary#set_engine_in_operator_user('" . a:name . "')")
 
 	return 1
 endfunction
