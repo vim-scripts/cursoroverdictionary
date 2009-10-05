@@ -1,7 +1,7 @@
 *cursoroverdictionary.txt*	辞書引き+αスクリプト
 
-Last change: 2009 Oct 03
-Version : 0.0.7
+Last change: 2009 Oct 05
+Version : 0.0.8
 Copyright (C) 2009 ampmmn <http://d.hatena.ne.jp/ampmmn>
 
 目次:
@@ -292,6 +292,7 @@ map W <Plug>(operator-cod-wp)
 ==============================================================================
 CHANGELOG				*cod-changelog*
 
+	0.0.8		2009-10-05	bug fix for garbled message.
 	0.0.7		2009-10-03	bug fix
 	0.0.6		2009-10-02	minor change.
 	0.0.5		2009-10-02	Several features added.

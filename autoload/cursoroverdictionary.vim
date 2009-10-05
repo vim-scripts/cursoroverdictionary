@@ -1,6 +1,6 @@
 " cursoroverdictionary.vim -- カーソル位置の英単語訳を表示
 " 
-" version : 0.0.7
+" version : 0.0.8
 " author : ampmmn(htmnymgw <delete>@<delete> gmail.com)
 " url    : http://d.hatena.ne.jp/ampmmn
 "
@@ -104,10 +104,8 @@ endfunction"}}}
 
 " エラーメッセージの出力
 function! s:echoerr(msg)
-	let msg = iconv(a:msg, 'utf-8', &enc)
-
 		echohl ErrorMsg
-		echo msg
+		echo a:msg
 		echohl
 endfunction
 

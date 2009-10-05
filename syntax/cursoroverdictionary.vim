@@ -1,6 +1,6 @@
 " cursoroverdictionary.vim -- cursoroverdictionary出力ウインドウのハイライト
 " 
-" version : 0.0.7
+" version : 0.0.8
 " author : ampmmn(htmnymgw <delete>@<delete> gmail.com)
 " url    : http://d.hatena.ne.jp/ampmmn
 
