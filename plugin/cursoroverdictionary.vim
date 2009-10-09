@@ -1,11 +1,12 @@
 " cursoroverdictionary.vim -- カーソル位置の英単語訳を表示
 " 
-" version : 0.0.8
+" version : 0.0.9
 " author : ampmmn(htmnymgw <delete>@<delete> gmail.com)
 " url    : http://d.hatena.ne.jp/ampmmn
 "
 " ----
 " history
+"	 0.0.9		2009-10-09	Add external search result cache.
 "	 0.0.8		2009-10-05	bug fix for garbled message.
 "	 0.0.7		2009-10-03	bug fix
 "	 0.0.6		2009-10-02	minor change.

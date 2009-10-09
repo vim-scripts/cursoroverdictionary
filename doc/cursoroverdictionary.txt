@@ -1,7 +1,7 @@
 *cursoroverdictionary.txt*	辞書引き+αスクリプト
 
-Last change: 2009 Oct 05
-Version : 0.0.8
+Last change: 2009 Oct 09
+Version : 0.0.9
 Copyright (C) 2009 ampmmn <http://d.hatena.ne.jp/ampmmn>
 
 目次:
@@ -152,6 +152,22 @@ g:CODDisableCursorMoveUpdate		*g:CODDisableCursorMoveUpdate*
 	この変数を0以外の値に設定すると、カーソル移動時に
 	出力ウインドウの内容を更新しなくなります。
 
+g:CODPermanentCachePath			*g:CODPermanentCachePath*
+	外部検索結果キャッシュの保存先パスを指定します。
+	この変数を指定しない場合、キャッシュは一時ファイルに保存され、
+	Vim終了時に破棄されます。
+
+	この変数でキャッシュ保存先を指定することにより、
+	次回以降のVim起動時にも、キャッシュを再利用することができるようになります。
+
+	なお、この変数により保存先ファイルを指定した場合、
+	そのファイルを削除しない限り、キャッシュは保持されます。
+	また、キャッシュ内に一致する検索語がある場合にはキャッシュを優先します。
+	そのため、外部から得られる内容に更新があった場合でも、
+	それは反映されなくなります。
+	
+	なお、キャッシュ機能を利用するには|+python|が必要です。
+
 ==============================================================================
 マッピング				*cod-mapping*
 
@@ -160,7 +176,11 @@ g:CODDisableCursorMoveUpdate		*g:CODDisableCursorMoveUpdate*
 .vimrcで下記のように設定しておけば、選択した単語・語句を簡単に調べられるように
 なって便利です。
 
+	内部検索の場合
 	vnoremap <silent> {任意のキー} :<c-u>CODSelected<cr>
+	外部検索の場合
+	vnoremap <silent> {任意のキー} :<c-u>CODSelectedEx {検索エンジン名}<cr>
+
 
 あとは、CODToggleコマンドをマップしておけば、簡単に出力ウインドウを表示/非表示
 にすることができます。
@@ -185,10 +205,19 @@ cursoroverdictionary#add(name, url, urlenc, siteenc)
 		{word}と書くと、その部分が選択文字列に置換されます。
 	
 	urlenc		(文字列)
-		URL文字列をエスケープする際のエンコード方法を指定します。
+		URL文字列をエスケープする際のエンコード形式を指定します。
 	
 	siteenc		(文字列)
 		取得した結果のエンコード形式を指定します。
+	
+	
+	使用している環境にoperator-userスクリプトがインストールされている場合、
+	外部検索エンジンを使った検索をオペレータとして実行することができます。
+
+	「<Plug>(operator-cod-検索エンジン名)」という形式でマップが作成されます
+	すので、これを任意のキーにマッピングすることによって、任意の外部検索を
+	オペレータとして利用することができます。
+	(|cod-operator|を参照してください。)
 
 cursoroverdictionary#set_trim_pattern(name, start, end)
 	取得した結果から、必要な部分を切り出すためのパターンを指定します。
@@ -208,7 +237,7 @@ cursoroverdictionary#set_trim_pattern(name, start, end)
 
 
 cursoroverdictionary#enable_proxy(name, proxy)
-	サイトにアクセスする際にプロキシを使う場合に、
+	サイトにアクセスする際にプロキシサーバを経由する場合に、
 	プロキシサーバを指定するために使用します。
 	
 	name		(文字列)
@@ -284,14 +313,16 @@ map W <Plug>(operator-cod-wp)
 ----
 
 
-すると、W+|{motion}|で、対象のテキストをWikipediaで検索し、
+すると、W +|{motion}|で、対象のテキストをWikipediaで検索し、
 その結果を出力ウインドウで表示することができます。
 また、ビジュアルモードで選択した状態からWキーで、選択したテキストを検索すること
 もできます。
 
+
 ==============================================================================
 CHANGELOG				*cod-changelog*
 
+	0.0.9		2009-10-09	Add external search result cache.
 	0.0.8		2009-10-05	bug fix for garbled message.
 	0.0.7		2009-10-03	bug fix
 	0.0.6		2009-10-02	minor change.

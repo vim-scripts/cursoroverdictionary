@@ -1,6 +1,6 @@
 " cursoroverdictionary.vim -- カーソル位置の英単語訳を表示
 " 
-" version : 0.0.8
+" version : 0.0.9
 " author : ampmmn(htmnymgw <delete>@<delete> gmail.com)
 " url    : http://d.hatena.ne.jp/ampmmn
 "
@@ -35,6 +35,9 @@ if exists("g:CODDisableCursorMoveUpdate")== 0"{{{
 	let g:CODDisableCursorMoveUpdate=0
 endif "}}}
 
+" 外部検索結果のキャッシュファイル指定
+" (指定しない場合は、Vim終了時にキャッシュファイルを破棄します)
+" let g:CODPermanentCachePath = '~/.cod_external_cache.db'
 
 " autocmdの解除
 function! s:delete_augroup()"{{{
@@ -103,11 +106,11 @@ endfunction"}}}
 
 
 " エラーメッセージの出力
-function! s:echoerr(msg)
-		echohl ErrorMsg
-		echo a:msg
-		echohl
-endfunction
+function! s:echoerr(msg) "{{{
+	echohl ErrorMsg
+	echo a:msg
+	echohl
+endfunction "}}}
 
 if has('python')
 
@@ -128,6 +131,23 @@ def importSQLite():#{{{
 	except ImportError:
 		import sqlite
 		return sqlite, False
+#}}}
+
+# 単語を登録
+def insert_keyword(cur, keyword, description, add, _sqlite, isSQLite3): #{{{
+	param = u"(?,?)"
+	if isSQLite3 == False:
+		  param = u"(%s,%s)"
+	try:
+		cur.execute(u"insert into words values" + param, (keyword, description))
+	except _sqlite.IntegrityError:
+		if int(add) == 0: raise
+		del_param = u"?"
+		if isSQLite3 == False:
+			del_param = u"%s"
+		# 既存のキーを削除した上で再登録を試みる
+		cur.execute(u"delete from words where keyword=" + del_param, (keyword,))
+		cur.execute(u"insert into words values" + param, (keyword, description))
 #}}}
 
 END_OF_PYTHON_PART
@@ -186,8 +206,6 @@ try:
 
 	keyword, description = '', ''
 
-
-	add = vim.eval('a:add')
 	dict_fmt = get_dict_format(fIn)
 	for line in fIn:
 		line = line.decode(fencode,'ignore')
@@ -208,21 +226,8 @@ try:
 			continue
 
 		# 取得したデータをデータベースに流し込む
-		param = u"(?,?)"
-		if isSQLite3 == False:
-			param = u"(%s,%s)"
-		try:
-			cur.execute(u"insert into words values" + param, (keyword, description))
-		except _sqlite.IntegrityError:
-			if int(add) == 0: raise
-			del_param = u"?"
-			if isSQLite3 == False:
-				del_param = u"%s"
-			# 既存のキーを削除した上で再登録を試みる
-			cur.execute(u"delete from words where keyword=" + del_param, (keyword,))
-			cur.execute(u"insert into words values" + param, (keyword, description))
+		insert_keyword(cur, keyword, description, vim.eval('a:add'), _sqlite, isSQLite3)
 		keyword, description = '', ''
-
 
 	conn.commit()
 	conn.close()
@@ -291,7 +296,7 @@ function! s:UpdateWord()"{{{
 	endif
 
 	" 現在位置の単語の説明文を取得
-	let [word, description] = s:getDesctiption(cursor_word)
+	let [word, description] = s:getDescription(cursor_word, g:CODDatabasePath)
 	call s:set_current_word(word)
 	call s:update_window(word, description)
 endfunction"}}}
@@ -346,7 +351,7 @@ if has('python')
 python << END_OF_PYTHON_PART
 
 # 単語に対応する説明文を取得
-def getDesctiption(conn, word):#{{{
+def getDescriptionFromDB(conn, word):#{{{
 	enc = vim.eval('&enc')
 	_sqlite, isSQLite3 = importSQLite()
 	cur = conn.cursor()
@@ -364,8 +369,11 @@ def getDesctiption(conn, word):#{{{
 		if isSQLite3 == False:
 			param = u"%s"
 		if type(word) != type(u''): word = word.decode(enc)
-		cur.execute(u"select * from words where keyword=" + param, (word,))
-			# なんか、ここでmemory-leakのような挙動.使い方間違ってるのだろうか?
+		try:
+		  cur.execute(u"select * from words where keyword=" + param, (word,))
+			  # なんか、ここでmemory-leakのような挙動.使い方間違ってるのだろうか?
+		except _sqlite.DatabaseError:
+			return '', []
 
 		keyword = ''
 		desc = []
@@ -524,7 +532,7 @@ END_OF_PYTHON_PART
 endif " has('python')
 
 " 指定された単語の説明文をデータベースから取得
-function! s:getDesctiption(word)"{{{
+function! s:getDescription(word, db_path)"{{{
 
 	" 以降のコードはpythonコードなので、-python環境では実行しない
 	if has('python') == 0
@@ -539,7 +547,7 @@ vim.command("let result = "+ str([]))
 
 try:
 	_sqlite, isSQLite3 = importSQLite()
-	dbFile = vim.eval("expand(g:CODDatabasePath)")
+	dbFile = vim.eval("expand(a:db_path)")
 	conn = _sqlite.connect(dbFile)
 
 	keyword = ''
@@ -550,13 +558,13 @@ try:
 	# 前後の空白を削除
 	word = word.strip(" \t")
 	
-	keyword, desc = getDesctiption(conn, word)
+	keyword, desc = getDescriptionFromDB(conn, word)
 	# 対応する説明文が見つからなかった場合は、単語を変形して再試行
 	if len(desc)==0:
 		stemmedWords = stemWord(word)
 		for _ in stemmedWords:
 			if _ == word: continue
-			keyword, desc = getDesctiption(conn, _)
+			keyword, desc = getDescriptionFromDB(conn, _)
 			if len(desc) > 0: break
 	
 	conn.close()
@@ -573,7 +581,6 @@ try:
 	vim.command('silent! let result_key = "' + escape(keyword) + '"')
 	vim.command('silent! let result = []')
 	for item in desc:
-		item = item.replace('"','\\"')
 		data = 'silent! let result += ["' + escape(item) + '"]'
 		vim.command(data)
 
@@ -686,13 +693,127 @@ function! s:stripTag(context, contents) "{{{
 	" 2行以上の空白は1行空白にまとめる
 	let body = substitute(body, '\n\n\n\+', '\n\n', 'g')
 
+	let body = substitute(body, '&gt;', '>', 'g')
+	let body = substitute(body, '&lt;', '<', 'g')
+	let body = substitute(body, '&quot;', '"', 'g')
+	let body = substitute(body, '&apos;', "'", 'g')
+	let body = substitute(body, '&;', '', 'g')
+	let body = substitute(body, '&nbsp;', ' ', 'g')
+	let body = substitute(body, '&yen;', '&#65509;', 'g')
+	let body = substitute(body, '&#x\(\x\+\);', '\=s:Uni_nr2enc_char(submatch(0))', 'g')
+	let body = substitute(body, '&#\(\d\+\);', '\=s:Uni_nr2enc_char(submatch(0))', 'g')
+	let body = substitute(body, '&amp;', '\&', 'g')
+
 	return split(body, "\n")
 endfunction
 "}}}
 
+" 説明文が空かどうかを判定
+function! s:is_empty_description(description) "{{{
+	for _ in a:description
+		let l:word = substitute(_, '^\s*\(.*\)','\1', '')
+		if len(l:word)!=0
+			return 0
+		endif
+	endfor
+	return 1
+endfunction
+"}}}
+
+" キャッシュファイルのパスを取得
+function! s:getCacheFilePath() "{{{
+  " 永続的なキャッシュファイルが指定されていた場合は、それを使用
+  if exists('g:CODPermanentCachePath') && g:CODPermanentCachePath != ''
+    return g:CODPermanentCachePath
+  endif
+  " そうでなければ、一時的なパスを生成し、キャッシュファイルとする
+  if exists('s:tempCachePath') == 0
+    let s:tempCachePath = tempname()
+  endif
+  return s:tempCachePath
+endfunction "}}}
+
+" 外部からの取得結果をキャッシュに登録
+function! s:registerCache(context, word, description) "{{{
+  if has('python') == 0
+    return 0
+  endif
+
+  let l:keyword = a:context.name . "@@" . a:word
+python << END_OF_PYTHON_PART
+import vim
+try:
+	_sqlite, isSQLite3 = importSQLite()
+
+	enc = vim.eval('&enc')
+	fencode=enc
+
+	dbFile = vim.eval("expand(s:getCacheFilePath())")
+	conn = _sqlite.connect(dbFile)
+
+	cur = conn.cursor()
+
+	if isSQLite3 == False:
+		try: cur.con.encoding = (enc,)
+		except: pass
+
+	# DBの作成
+	# sqliteではif not existsが使えないのでエラーをつぶしている(sqlite3では使用可能)
+	try:
+		cur.execute(u"create table words (keyword TEXT PRIMARY KEY, description TEXT);")
+	except: pass
+
+	keyword, descList = vim.eval('l:keyword'), vim.eval('a:description')
+	# 行末の改行を除去
+	keyword = keyword.rstrip("\r\n")
+	# 前後の空白を削除
+	keyword = keyword.strip(" \t")
+
+	if type(keyword) != type(u''): keyword = keyword.decode(enc)
+
+	description = ' \\ '.join(descList)
+	description = description.decode(enc)
+
+	if "/" not in keyword:
+	  # 取得したデータをデータベースに流し込む
+	  insert_keyword(cur, keyword, description, True, _sqlite, isSQLite3)
+
+	conn.commit()
+	conn.close()
+except UnicodeDecodeError:
+	echoError('データベース登録時に文字コードを変換できませんでした。('+fencode +'->utf-8)')
+except ImportError:
+	echoError('sqliteのimportに失敗しました(pythonのバージョンが古い?)')
+except _sqlite.IntegrityError:
+	echoError('キーワード「%s」は既に登録済みです'%(keyword.encode(enc),))
+except _sqlite.OperationalError:
+	echoError('DBの操作中にエラーが発生しました(Diskfullか、さもなくばBug)')
+except IOError:
+	echoError("指定されたファイルは存在しません : " + pdict_path)
+except LookupError:
+	echoError('不明な文字コード形式です : ' + fencode)
+END_OF_PYTHON_PART
+	return 1
+endfunction
+"}}}
+
+" キャッシュから単語の説明文を取得
+function! s:getDescriptionFromCache(context, word) "{{{
+  let searchWord = a:context.name . '@@' . a:word
+  let [l:word, description] = s:getDescription(searchWord, s:getCacheFilePath())
+  return [a:word, description]
+endfunction
+"}}}
+
 " 外部から単語の説明文を取得
-function! s:getDesctiptionFromExternal(context, word) "{{{
+function! s:getDescriptionFromExternal(context, word) "{{{
 	let [keyword, description] = [ '', [] ]
+
+	" 必要に応じてキャッシュを利用する
+	let [keyword, description] = s:getDescriptionFromCache(a:context, a:word)
+	if len(description) != 0
+	  return [keyword, description]
+	endif
 
 	" 前後の空白/改行を削除
 	let l:word = substitute(a:word, '^\s*\(.*\)','\1', '')
@@ -714,7 +835,14 @@ function! s:getDesctiptionFromExternal(context, word) "{{{
 	endif
 
 	" 得られたデータから、必要な部分のテキストのみを抽出
-	return [a:word, s:stripTag(a:context, l:result)]
+	let description = s:stripTag(a:context, l:result)
+	if s:is_empty_description(description)
+		let description = []
+	endif
+
+	" 必要に応じてキャッシュ登録
+	call s:registerCache(a:context, a:word, description)
+	return [a:word, description]
 endfunction
 "}}}
 
@@ -756,10 +884,10 @@ function! cursoroverdictionary#selected()"{{{
 		return
 	endif
 
-	let [ keyword, description ] = s:getDesctiption(word)
+	let [ keyword, description ] = s:getDescription(word, g:CODDatabasePath)
 	if len(description) == 0 && s:has_default_engine()
 		" 見つからなかった場合はデフォルトの検索エンジンを使って外部から取得してみる
-		let [ keyword, description ] = s:getDesctiptionFromExternal(s:get_default_engine(), word)
+		let [ keyword, description ] = s:getDescriptionFromExternal(s:get_default_engine(), word)
 	endif
 	if len(description) == 0
 		call s:echoerr("単語は見つかりませんでした: " . word)
@@ -786,7 +914,7 @@ function! cursoroverdictionary#selected_ex(name)"{{{
 		return
 	endif
 
-	let [ keyword, description ] = s:getDesctiptionFromExternal(s:external_engines[a:name], word)
+	let [ keyword, description ] = s:getDescriptionFromExternal(s:external_engines[a:name], word)
 	if len(description) == 0
 		call s:echoerr("単語は見つかりませんでした: " . word)
 		return
@@ -813,10 +941,10 @@ function! cursoroverdictionary#search_keyword(...)"{{{
 		let word = join(a:000, ' ')
 	endif
 
-	let [ keyword, description ] = s:getDesctiption(word)
+	let [ keyword, description ] = s:getDescription(word, g:CODDatabasePath)
 	if len(description) == 0 && s:has_default_engine()
 		" 見つからなかった場合は外部から取得してみる
-		let [ keyword, description ] = s:getDesctiptionFromExternal(s:get_default_engine(), word)
+		let [ keyword, description ] = s:getDescriptionFromExternal(s:get_default_engine(), word)
 	endif
 	if len(description) == 0
 		call s:echoerr("単語は見つかりませんでした: " . word)
@@ -848,7 +976,7 @@ function! cursoroverdictionary#search_keyword_ex(name, ...)"{{{
 		return
 	endif
 
-	let [ keyword, description ] = s:getDesctiptionFromExternal(s:external_engines[a:name], word)
+	let [ keyword, description ] = s:getDescriptionFromExternal(s:external_engines[a:name], word)
 	if len(description) == 0
 		call s:echoerr("単語は見つかりませんでした: " . word)
 		return
@@ -996,6 +1124,38 @@ function! s:add_operator_user(name) "{{{
 	return 1
 endfunction
 "}}}
+
+" 以下、alice.vimからのコード(一部改変)
+function! s:Utf_nr2byte(nr)"{{{
+  if a:nr < 0x80
+    return nr2char(a:nr)
+  elseif a:nr < 0x800
+    return nr2char(a:nr/64+192).nr2char(a:nr%64+128)
+  else
+    return nr2char(a:nr/4096%16+224).nr2char(a:nr/64%64+128).nr2char(a:nr%64+128)
+  endif
+endfunction"}}}
+
+function! s:Uni_nr2enc_char(charcode)"{{{
+  let char = s:Utf_nr2byte(a:charcode)
+  if has('iconv') && strlen(char) > 1
+    let char = strtrans(iconv(char, 'utf-8', &encoding))
+  endif
+  return char
+endfunction"}}}
+
+function! s:AL_decode_entityreference_with_range(range)"{{{
+  " Decode entity reference for range
+  silent! execute a:range 's/&gt;/>/g'
+  silent! execute a:range 's/&lt;/</g'
+  silent! execute a:range 's/&quot;/"/g'
+  silent! execute a:range "s/&apos;/'/g"
+  silent! execute a:range 's/&nbsp;/ /g'
+  silent! execute a:range 's/&yen;/\&#65509;/g'
+  silent! execute a:range 's/&#x\(\x\+\);/\=s:Uni_nr2enc_char(submatch(0))/g'
+  silent! execute a:range 's/&#\(\d\+\);/\=s:Uni_nr2enc_char(submatch(0))/g'
+  silent! execute a:range 's/&amp;/\&/g'
+endfunction"}}}
 
 " vim:foldmethod=marker
 
