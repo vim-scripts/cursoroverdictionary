@@ -1,6 +1,6 @@
 " cursoroverdictionary.vim -- カーソル位置の英単語訳を表示
 " 
-" version : 0.0.9
+" version : 0.1
 " author : ampmmn(htmnymgw <delete>@<delete> gmail.com)
 " url    : http://d.hatena.ne.jp/ampmmn
 "
@@ -15,6 +15,10 @@ if exists("g:CODDatabasePath")==0"{{{
 endif"}}}
 
 " ウインドウを表示する方向
+" 上に水平分割表示: ''
+" 下に水平分割表示: 'rightbelow'
+" 左に垂直分割表示: 'vertical'
+" 右に垂直分割表示: 'vertical rightbelow'
 if exists("g:CODDirection")==0"{{{
 	let g:CODDirection='rightbelow'
 endif"}}}
@@ -47,23 +51,45 @@ function! s:delete_augroup()"{{{
 endfunction"}}}
 
 " 出力バッファ & ウインドウの作成
-function! cursoroverdictionary#open(update)"{{{
-	" s:open_result_buffer@quickrun.vim
-	let bname = 'CursorOverDictionary'
+function! cursoroverdictionary#open(update, engine_name)"{{{
+
+	let context = s:get_external_engine(a:engine_name)
+
+	let bname = get(context, 'bufname', 'CursorOverDictionary')
 	let cur_winnr = winnr()
+
+	if exists("s:regist_operator_last") == 0 && exists('*operator#user#define')
+		call operator#user#define('cod-last', 'cursoroverdictionary#operator_last')
+		let s:regist_operator_last = 1
+	endif
+
 
 	" バッファが存在しなければ、出力ウインドウとともに作成
 	if bufexists(bname) == 0
-		silent execute g:CODDirection g:CODWindowHeight 'new'
+		let height = get(context, 'windowheight', g:CODWindowHeight)
+		if height == 0
+			let height = ''
+		endif
+
+		silent execute get(context, 'direction', g:CODDirection) height 'new'
 		setlocal bufhidden=unload
 		setlocal nobuflisted
 		setlocal buftype=nofile
 		setlocal nomodifiable
 		setlocal noswapfile
 		setlocal nonumber
+		setlocal foldmethod=marker
 		setfiletype cursoroverdictionary
 		silent file `=bname`
 		noremap <buffer><silent> q :bwipeout<cr>
+		noremap <buffer><silent> H :call cursoroverdictionary#previous_page()<cr>
+		noremap <buffer><silent> L :call cursoroverdictionary#next_page()<cr>
+		noremap <buffer><silent> <cr> :call <SID>jump_marker()<cr>
+		noremap <buffer><silent> K :if expand("<cword>") != ''\|call cursoroverdictionary#search_keyword_ex(<SID>get_recent_engine(), expand("<cword>"))\|endif<CR>
+		vnoremap <buffer><silent> K :call cursoroverdictionary#selected_ex(<SID>get_recent_engine())<cr>
+		if exists('*operator#user#define')
+			map <buffer><silent> c <Plug>(operator-cod-last)
+		endif
 	else
 		" バッファはウインドウ上に表示されているか? なければウインドウだけ作成
 		let bufnr = bufnr('^'.bname.'$')
@@ -82,7 +108,11 @@ function! cursoroverdictionary#open(update)"{{{
 		execute "autocmd BufWipeout" bname "call s:delete_augroup()"
 	augroup END
 
-	execute cur_winnr 'wincmd w'
+	let windowfocus = get(s:get_external_engine(a:engine_name), 'windowfocus', 0) != 0
+
+	if windowfocus == 0
+		execute cur_winnr 'wincmd w'
+	endif
 
 	if (a:update!=0)
 		call s:UpdateWord()
@@ -90,17 +120,21 @@ function! cursoroverdictionary#open(update)"{{{
 endfunction"}}}
 
 " 出力バッファ & ウインドウの破棄
-function! cursoroverdictionary#close()"{{{
-	let bname = '^CursorOverDictionary$'
+function! cursoroverdictionary#close(name)"{{{
+
+	let engine_name = len(a:name)==0 ? s:get_recent_engine(): a:name
+	let context = s:get_external_engine(engine_name)
+	let bname = '^'. get(context, 'bufname', 'CursorOverDictionary') .'$'
 	silent! execute 'bwipeout!' bufnr(bname)
 endfunction"}}}
 
 " ウインドウのトグル
-function! cursoroverdictionary#toggle()"{{{
+function! cursoroverdictionary#toggle(name)"{{{
+	let engine_name = len(a:name)==0 ? s:get_recent_engine(): a:name
 	let win_nr = winnr('$')
-	call cursoroverdictionary#open(1)
+	call cursoroverdictionary#open(1, engine_name)
 	if win_nr == winnr('$')
-		call cursoroverdictionary#close()
+		call cursoroverdictionary#close(engine_name)
 	endif
 endfunction"}}}
 
@@ -247,13 +281,52 @@ END_OF_PYTHON_PART
 endfunction"}}}
 
 " 出力ウインドウ番号を取得
-function! s:get_output_winnr()"{{{
-	let bname = 'CursorOverDictionary'
-	if bufexists(bname) == 0
+function! s:get_output_winnr(bname)"{{{
+	if bufexists(a:bname) == 0
 		return -1
 	endif
-	return bufwinnr(bufnr('^'.bname.'$'))
+	return bufwinnr(bufnr('^'. a:bname .'$'))
 endfunction"}}}
+
+" 状態の更新
+function! s:update(name, new_item) "{{{
+
+	let context = s:get_external_engine(a:name)
+
+	if s:is_empty_searchresult(a:new_item)
+		return 0
+	endif
+
+
+	let prev_item = s:get_recent_history(0)
+	let prev_context = s:get_external_engine(get(prev_item, "engine_name", ''))
+	let bname = get(prev_context, 'bufname', 'CursorOverDictionary')
+	let [output_winnr, cur_winnr] = [s:get_output_winnr(bname), winnr()]
+	silent! let LeaveFunc_ = function(get(prev_context, "leave_function", ''))
+	if type(LeaveFunc_) == type(function("tr"))
+		execute output_winnr 'wincmd w'
+		call LeaveFunc_()
+		execute cur_winnr 'wincmd w'
+	endif
+
+	call s:set_current_word(context, expand("<cword>"))
+	call s:update_window(context, a:new_item.keyword, a:new_item.description)
+
+	let a:new_item.engine_name = a:name
+	call s:add_search_history(a:new_item)
+
+	"
+	silent! let EnterFunc_ = function(get(context, "enter_function", ''))
+	if type(EnterFunc_) == type(function("tr"))
+		let bname = get(context, 'bufname', 'CursorOverDictionary')
+		let [output_winnr, cur_winnr] = [s:get_output_winnr(bname), winnr()]
+		execute output_winnr 'wincmd w'
+		call EnterFunc_()
+		execute cur_winnr 'wincmd w'
+	endif
+
+	return 1
+endfunction "}}}
 
 " カーソル位置の単語の説明文を出力ウインドウに表示
 function! s:UpdateWord()"{{{
@@ -268,7 +341,7 @@ function! s:UpdateWord()"{{{
 	endif
 
 	" 出力バッファがない、またはウインドウに表示されていない場合は何もしない
-	let [orgnr, outputnr] = [winnr(), s:get_output_winnr()]
+	let [orgnr, outputnr] = [winnr(), s:get_output_winnr('CursorOverDictionary')]
 	if outputnr == -1
 		return
 	endif
@@ -295,15 +368,26 @@ function! s:UpdateWord()"{{{
 		return
 	endif
 
+	let name = 'internal'
+
+	let his = s:get_recent_history(0)
+	let l:pos = s:get_current_position(name)
+
 	" 現在位置の単語の説明文を取得
-	let [word, description] = s:getDescription(cursor_word, g:CODDatabasePath)
-	call s:set_current_word(word)
-	call s:update_window(word, description)
+	let item = s:getDescription(cursor_word, g:CODDatabasePath)
+	if s:is_empty_searchresult(item) && s:has_default_engine()
+		" 見つからなかった場合はデフォルトの検索エンジンのキャッシュから探してみる
+		let item = s:getDescriptionFromCache(s:get_default_engine(), cursor_word)
+	endif
+	call s:update(name, item)
+
+	let his.pos = l:pos
 endfunction"}}}
 
 " 指定した単語を「現在の単語」として記憶
-function! s:set_current_word(word)"{{{
-	let [output_winnr, cur_winnr] = [s:get_output_winnr(), winnr()]
+function! s:set_current_word(context, word)"{{{
+	let bname = get(a:context, 'bufname', 'CursorOverDictionary')
+	let [output_winnr, cur_winnr] = [s:get_output_winnr(bname), winnr()]
 	if output_winnr == -1
 		return
 	endif
@@ -313,8 +397,9 @@ function! s:set_current_word(word)"{{{
 endfunction"}}}
 
 " 出力ウインドウの内容を更新
-function! s:update_window(word, description)"{{{
-	let [output_winnr, cur_winnr] = [s:get_output_winnr(), winnr()]
+function! s:update_window(context, word, description)"{{{
+	let bname = get(a:context, 'bufname', 'CursorOverDictionary')
+	let [output_winnr, cur_winnr] = [s:get_output_winnr(bname), winnr()]
 	if output_winnr == -1
 		return
 	endif
@@ -326,6 +411,12 @@ function! s:update_window(word, description)"{{{
 
 	setlocal modifiable
 
+	" 指定したキーワードを強調するsyntaxを設定(highlight指定はsyntaxファイル側)
+	silent! syntax clear codSearchWord
+	if len(a:word) > 0
+		execute 'syntax match codSearchWord /\c'.escape(a:word, ' /').'/'
+	endif
+
 	"既存の内容を全削除し、新しい内容に置き換える
 	let org_ul = &undolevels
 	try
@@ -333,8 +424,11 @@ function! s:update_window(word, description)"{{{
 		" (一時的とはいえグローバルな値を変えることによる副作用がありそう・・)
 		let l:word = substitute(a:word,"\n\\|\t",'','g')
 		let &undolevels = -1
+
 		silent! execute 1 'delete _' line('$')
-		silent! call append(0, '== ' . l:word . ' ==')
+		let l:fmr = len(l:word) > &columns-10 && match(&fmr, ',') != -1 ? split(&fmr, ','): ['','']
+
+		silent! call append(0, l:fmr[0] . '== ' . l:word . ' ==' . l:fmr[1])
 		silent! call append(1, a:description)
 	finally
 		let &undolevels = org_ul
@@ -531,12 +625,99 @@ END_OF_PYTHON_PART
 
 endif " has('python')
 
+" 説明文が空かどうかを判定
+function! s:is_empty_description(description) "{{{
+	for _ in a:description
+		let l:word = substitute(_, '^\s*\(.*\)','\1', '')
+		if len(l:word)!=0
+			return 0
+		endif
+	endfor
+	return 1
+endfunction
+"}}}
+
+" 検索結果データ関連の処理 "{{{
+
+" 結果データが空かどうかを判定
+function! s:is_empty_searchresult(item) "{{{
+	return len(get(a:item, "description", {})) == 0
+endfunction "}}}
+
+" 新規結果データインスタンスを生成
+function! s:create_searchresult(...) "{{{
+	let item = {}
+
+	let item.keyword = ''
+	if len(a:000) >= 1
+		let item.keyword = a:000[0]
+	endif
+	let item.description = []
+	if len(a:000) >= 2
+		let item.description = a:000[1]
+	endif
+
+	return item
+endfunction "}}}
+
+" 文字参照のデコード
+function! s:decode_character_reference(text) "{{{
+	let body = substitute(a:text, '&gt;', '>', 'g')
+	let body = substitute(body, '&lt;', '<', 'g')
+	let body = substitute(body, '&quot;', '"', 'g')
+	let body = substitute(body, '&apos;', "'", 'g')
+	let body = substitute(body, '&;', '', 'g')
+	let body = substitute(body, '&nbsp;', ' ', 'g')
+	let body = substitute(body, '&yen;', '&#65509;', 'g')
+	let body = substitute(body, '&#x\(\x\+\);', '\=s:Uni_nr2enc_char(submatch(1))', 'g')
+	let body = substitute(body, '&#\(\d\+\);', '\=s:Uni_nr2enc_char(submatch(1))', 'g')
+	let body = substitute(body, '&amp;', '\&', 'g')
+	return body
+endfunction"}}}
+
+" タグを削除し、テキストのみを抽出
+function! s:strip_searchresult(item, context) "{{{
+
+	let body = s:substr(a:item.description, a:context.start_pattern, a:context.end_pattern)
+
+	" scriptタグ内のデータはすべて不要
+	let body = substitute(body, '\c<script.\{-}</script>', '', 'g')
+"	" コメントはすべて削除
+	let body = substitute(body, '<--.\{-}-->', '', 'g')
+"	" リスト形式の項目は改行を入れる
+	let body = substitute(body, '\c<li>\(\_.\{-}\)</li>', '\1\n', 'g')
+	let body = substitute(body, '\c</td>', '\t', 'g')
+"
+	let marker_link = {}
+	let body = substitute(body, '\c<a[^>]\{-}title\s\{-}="\(.\{-}\)"[^>]\{-}>\(.\{-}\)</a>', '\=s:register_link(marker_link, submatch(1), submatch(2))', 'g')
+"	" 残りのタグはすべて消す
+	let body = substitute(body, '<.\{-}>', '', 'g')
+"	" 改行コードは\nに
+	let body = substitute(body, '\r\n', '\n', 'g')
+"	" 2行以上の空白は1行空白にまとめる
+	let body = substitute(body, '\s\?\n\s\?\n\%(\s\?\n\)\+', '\n\n', 'g')
+"
+	" 文字参照のデコード
+	let body = s:decode_character_reference(body)
+
+	let a:item.description = split(body, "\n")
+	if s:is_empty_description(a:item.description)
+		let a:item.description = []
+	endif
+	let a:item.marker_link = marker_link
+endfunction
+"}}}
+
+"}}}
+
+
+
 " 指定された単語の説明文をデータベースから取得
 function! s:getDescription(word, db_path)"{{{
 
 	" 以降のコードはpythonコードなので、-python環境では実行しない
 	if has('python') == 0
-		return ['', '']
+		return s:create_searchresult()
 	endif
 
 python << END_OF_PYTHON_PART
@@ -588,7 +769,7 @@ except _sqlite.OperationalError: pass
 except ImportError: pass
 except UnicodeDecodeError: pass
 END_OF_PYTHON_PART
-	return [result_key, result]
+	return s:create_searchresult(result_key, result)
 endfunction"}}}
 
 " function! s:AL_urlencoder_ch2hex(ch)
@@ -603,9 +784,86 @@ function! s:ch2hex(ch)"{{{
   return result
 endfunction"}}}
 
+" URLエンコードを行います
+function! s:encode_for_url(context, word)"{{{
+	if get(a:context, 'url_encode', '') ==  ''
+		return a:word
+	endif
+	return iconv(a:word, &enc, a:context.url_encode)
+endfunction"}}}
+
+" カーソル位置のマーカーリンク内文字列を取得
+function! s:get_marker_string(lmkr, rmkr)"{{{
+	" Note: 同一行に複数のマーカーがあり、
+	" マーカー文字上にカーソカーソルを置いた状態でジャンプを実行した時の挙動が微妙
+	let line = getline(".")
+	let chr = line[getpos(".")[2]-1]
+	" 前方の区切り文字を検索
+	let s = searchpos('\V'.a:lmkr.'\|'. a:rmkr, chr == a:rmkr? 'nbW': 'nbcW')
+	if s == [0,0] || s[0] != line(".") || line[s[1]-1] != a:rmkr
+		return ''
+	endif
+	" 後方の区切り文字を検索
+	let e = searchpos('\V'. a:lmkr.'\|'. a:rmkr, chr == a:lmkr? 'nW': 'ncW')
+	if e == [0,0] || e[0] != line(".") || line[e[1]-1] != a:rmkr
+		return ''
+	endif
+	return line[s[1]:e[1]-2]
+endfunction"}}}
+
+" 指定した履歴情報に関連づけられたウインドウ(バッファ)の現在位置を取得
+function! s:get_current_position(name)"{{{
+	let context = s:get_external_engine(a:name)
+	let bname = get(context, 'bufname', 'CursorOverDictionary')
+	if bufexists(bname) == 0
+		return []
+	endif
+	let cur_winnr = bufwinnr("%")
+	let winnr = s:get_output_winnr(bname)
+	if winnr == -1
+		return []
+	endif
+
+	execute winnr 'wincmd w'
+	let pos = getpos(".")
+	execute cur_winnr 'wincmd w'
+
+	return pos
+endfunction"}}}
+
+" カーソル位置がマーカー内だった場合、マーカーを検索
+function! s:jump_marker() "{{{
+	let link = s:get_marker_string('|','|')
+	if link == ''
+		return
+	endif
+
+	let his = s:get_recent_history(0)
+	if s:is_empty_searchresult(his)
+		return
+	endif
+
+	let l:pos = getpos(".")
+
+	let name = s:get_recent_engine()
+
+	let item = {}
+	if has_key(his, "marker_link") && has_key(his.marker_link, link)
+		let item = s:search(name, his.marker_link[link])
+	endif
+	if s:is_empty_searchresult(item)
+		let item = s:search(name, link)
+	endif
+
+	call s:update(name, item)
+
+	let his.pos = l:pos
+
+endfunction "}}}
+
 " 外部から訳を取得するためのURLを生成
 function! s:makeUrl(context, word) "{{{
-  let l:word = iconv(a:word, &enc, a:context.url_encode)
+	let l:word = s:encode_for_url(a:context, a:word)
   let l:word = substitute(l:word, '\c[^- *.0-9a-z]', '\=s:ch2hex(submatch(0))', 'g')
   let l:escaped_word = substitute(l:word, ' ', '+', 'g')
 	let l:url = substitute(a:context.url, '{word}', l:escaped_word, 'g')
@@ -625,33 +883,78 @@ function! s:readfile(filepath) "{{{
 endfunction
 "}}}
 
-" 外部コマンド実行のためのコマンドライン文字列を生成
-function! s:get_from_url(context, url) "{{{
+" cURLを実行して、データを読み込む
+function! s:do_curl(req)"{{{
+
+	let retry_count = 2
+	let redirect = " -L --max-redirs " . retry_count . " "
+
+	let l:opt = '--fail -s -w "%{http_code}"' . redirect
+
 	let tmp_data = tempname()
 
-	let l:proxy = ''
-	if has_key(a:context, "proxy") && a:context.proxy != ""
-		let l:proxy = ' -x ' . a:context.proxy
-	endif
+	let l:proxy = len(a:req.proxy) ? ' -x ' . a:req.proxy : ' '
+	let l:useragent = len(a:req.user_agent) ? ' -A "' . a:req.user_agent . '" ' : ''
 
-	let l:useragent = ''
-	if has_key(a:context, "user_agent")
-		let l:useragent = ' -A "' . a:context.user_agent . '" '
-	endif
 
-	let cmd = "curl --fail -s -w \"%{http_code}\"". l:proxy . l:useragent . ' -o ' . tmp_data . ' "' . a:url. '"'
-
+	let cmd = "curl " . l:opt . l:proxy . l:useragent . ' -o ' . tmp_data . ' "' . a:req.url. '"'
 	let response = system(s:escape_for_win32(cmd))
-	let result = iconv(s:readfile(tmp_data), a:context.site_encode, &enc)
 
+	let res_data = { "statuscode":200 }
+	if response =~ '^\d\+$'
+		let res_data.statuscode = 0+response
+	endif
+
+	let res_data.data = s:readfile(tmp_data)
 	" 失敗したら、気休めに標準出力の結果をうけとる
-	if result == ''
-		let result = response
+	if res_data.data == ''
+		let res_data.data = response
 	endif
 
 	silent call delete(tmp_data)
+	return res_data
+endfunction"}}}
 
-	return result
+" cURLを使ってURLからデータを取得
+function! s:get_from_url(context, word) "{{{
+
+	" curlが実行できない場合はエラー
+	if executable('curl') == 0
+		call s:echoerr('curlがみつかりません')
+		return ''
+	endif
+
+	let req = {}
+
+	" URL文字列の生成
+	let req.url = s:makeUrl(a:context, a:word)
+	if req.url == ''
+		return ''
+	endif
+
+	let req.proxy = ''
+	if $http_proxy != '' || $HTTP_PROXY != ''
+		let l:http_proxy = $http_proxy != '' ? $http_proxy : $HTTP_PROXY
+		let req.proxy= substitute(l:http_proxy, '\%(https\?://\)\(.\{-}\)', '\1', '')
+	endif
+	let req.proxy = get(a:context, "proxy", req.proxy)
+	let req.user_agent = get(a:context, "user_agent", '')
+
+	let res = s:do_curl(req)
+	" 200でなければエラー
+	if res.statuscode != 200
+		return ''
+	endif
+
+	return res.data
+endfunction
+"}}}
+
+" 外部コマンドからデータを取得
+function! s:get_from_system(context, word) "{{{
+  let l:word = s:encode_for_url(a:context, a:word)
+	let l:url = substitute(a:context.url, '{word}', l:word, 'g')
+	return system(s:escape_for_win32(l:url))
 endfunction
 "}}}
 
@@ -673,52 +976,24 @@ endfunction
 " (start,end)間の部分文字列を得る
 function! s:substr(data, start, end)"{{{
 	" NOTE:正規表現の後方参照を使うと大きいデータで極端に遅くなるための代替処理
-	let s = match(a:data, a:start . '\zs')
-	let e = match(a:data, a:end, s)
+	let s = len(a:start)>0 ? match(a:data, a:start . '\zs'): 0
+	let e = len(a:end)>0 ? match(a:data, a:end, s) : len(a:end)
+
+	if s == -1 && e == -1
+		return a:data
+	endif
+
 	return a:data[s : e-1]
 endfunction"}}}
 
-" タグを削除し、テキストのみを抽出
-function! s:stripTag(context, contents) "{{{
-	let body = s:substr(a:contents, a:context.start_pattern, a:context.end_pattern)
+" title属性とリンク内テキストの関連づけを保持
+function! s:register_link(marker_link, link, text)"{{{
+	
+	let l:text = s:decode_character_reference(a:text)
+	let a:marker_link[l:text] = s:decode_character_reference(a:link)
 
-	" scriptタグ内のデータはすべて不要
-	let body = substitute(body, '<script.\{-}</script>', '', 'g')
-	" リスト形式の項目は改行を入れる
-	let body = substitute(body, '<li>\(\_.\{-}\)</li>', '\1\n', 'g')
-	" 残りのタグはすべて消す
-	let body = substitute(body, '<.\{-}>', '', 'g')
-	" 改行コードは\nに
-	let body = substitute(body, '\r\n', '\n', 'g')
-	" 2行以上の空白は1行空白にまとめる
-	let body = substitute(body, '\n\n\n\+', '\n\n', 'g')
-
-	let body = substitute(body, '&gt;', '>', 'g')
-	let body = substitute(body, '&lt;', '<', 'g')
-	let body = substitute(body, '&quot;', '"', 'g')
-	let body = substitute(body, '&apos;', "'", 'g')
-	let body = substitute(body, '&;', '', 'g')
-	let body = substitute(body, '&nbsp;', ' ', 'g')
-	let body = substitute(body, '&yen;', '&#65509;', 'g')
-	let body = substitute(body, '&#x\(\x\+\);', '\=s:Uni_nr2enc_char(submatch(0))', 'g')
-	let body = substitute(body, '&#\(\d\+\);', '\=s:Uni_nr2enc_char(submatch(0))', 'g')
-	let body = substitute(body, '&amp;', '\&', 'g')
-
-	return split(body, "\n")
-endfunction
-"}}}
-
-" 説明文が空かどうかを判定
-function! s:is_empty_description(description) "{{{
-	for _ in a:description
-		let l:word = substitute(_, '^\s*\(.*\)','\1', '')
-		if len(l:word)!=0
-			return 0
-		endif
-	endfor
-	return 1
-endfunction
-"}}}
+	return '|'. a:text . '|'
+endfunction"}}}
 
 " キャッシュファイルのパスを取得
 function! s:getCacheFilePath() "{{{
@@ -734,12 +1009,20 @@ function! s:getCacheFilePath() "{{{
 endfunction "}}}
 
 " 外部からの取得結果をキャッシュに登録
-function! s:registerCache(context, word, description) "{{{
+function! s:register_cache(engine_name, item) "{{{
   if has('python') == 0
     return 0
   endif
 
-  let l:keyword = a:context.name . "@@" . a:word
+  let l:keyword = a:engine_name . "@@" . a:item.keyword
+	let l:description = a:item.description
+
+	" marker_link属性を文字列化
+	let l:marker_link = ''
+	if has_key(a:item, 'marker_link') && len(a:item.marker_link)
+		let l:marker_link = string(a:item.marker_link)
+	endif
+
 python << END_OF_PYTHON_PART
 import vim
 try:
@@ -763,7 +1046,8 @@ try:
 		cur.execute(u"create table words (keyword TEXT PRIMARY KEY, description TEXT);")
 	except: pass
 
-	keyword, descList = vim.eval('l:keyword'), vim.eval('a:description')
+	keyword, descList = vim.eval('l:keyword'), vim.eval('l:description')
+	marker_link = vim.eval('l:marker_link')
 	# 行末の改行を除去
 	keyword = keyword.rstrip("\r\n")
 	# 前後の空白を削除
@@ -772,6 +1056,11 @@ try:
 	if type(keyword) != type(u''): keyword = keyword.decode(enc)
 
 	description = ' \\ '.join(descList)
+	# 「\\\\ 」を区切りとしてmarker_link情報を埋め込む
+	# (s:getDescriptionFromCache側で復元します)
+	if len(marker_link) > 0:
+		description += ' \\ \\\\\\\\ '
+		description += marker_link
 	description = description.decode(enc)
 
 	if "/" not in keyword:
@@ -800,49 +1089,68 @@ endfunction
 " キャッシュから単語の説明文を取得
 function! s:getDescriptionFromCache(context, word) "{{{
   let searchWord = a:context.name . '@@' . a:word
-  let [l:word, description] = s:getDescription(searchWord, s:getCacheFilePath())
-  return [a:word, description]
-endfunction
-"}}}
+  let item = s:getDescription(searchWord, s:getCacheFilePath())
+
+	let item.keyword = a:word
+	" Note: ここでのs:getDescriptionの戻り値は
+	" <a:context.name> . '@@' . keyword という形式になっているので
+	" ここでキーワードを書き換える
+
+	" marker_link属性の復元
+	for _ in range(len(item.description))
+		let l:line = item.description[_]
+		if l:line !~ '^\\\\\\\\ '
+			continue
+		endif
+		exe "let item.marker_link =" substitute(l:line, '^\\\\\\\\ \(.*\)', '\1', '')
+		call remove(item.description, _)
+		break
+	endfor
+
+  return item
+endfunction "}}}
+
+" ユーザ定義関数から取得
+function! s:get_from_function(context, word) "{{{
+	" [1:]としているのは先頭の*を取り除くため
+	let Func = function(a:context.url[1:])
+	return type(Func) != type(0) ? Func(a:word) : ''
+endfunction "}}}
 
 " 外部から単語の説明文を取得
 function! s:getDescriptionFromExternal(context, word) "{{{
-	let [keyword, description] = [ '', [] ]
-
+	" 前後の空白を除去
+	let l:word = matchstr(a:word, '^\s*\zs.\{-}\ze\%(\s\|\n\)*$')
 	" 必要に応じてキャッシュを利用する
-	let [keyword, description] = s:getDescriptionFromCache(a:context, a:word)
-	if len(description) != 0
-	  return [keyword, description]
+	let item = s:getDescriptionFromCache(a:context, l:word)
+	" ToDo: getDescriptionFromCacheでitemの状態を完全に復元できるようにする
+	if s:is_empty_searchresult(item) == 0
+		return item
 	endif
-
-	" 前後の空白/改行を削除
-	let l:word = substitute(a:word, '^\s*\(.*\)','\1', '')
-	while len(l:word) && (l:word[len(l:word)-1]=="\n" || l:word[len(l:word)-1]==' ')
-		let l:word = l:word[: len(l:word)-2]
-	endwhile
-
-	" URL文字列の生成
-	let l:url = s:makeUrl(a:context, l:word)
-	if l:url == ''
-		return ['',[]]
-	endif
-
 
 	" URLへのアクセスを行い、結果を取得
-	let l:result = s:get_from_url(a:context, l:url)
-	if l:result == ''
-		return ['', []]
+	if a:context.url =~# 'https\?://'
+		let _ = s:get_from_url(a:context, l:word)
+	elseif a:context.url[0] == '*'
+		let _ = s:get_from_function(a:context, l:word)
+	else
+		let _ = s:get_from_system(a:context, l:word)
 	endif
+	if _ == ''
+		return s:create_searchresult()
+	endif
+	if has_key(a:context, 'error_pattern') && _ =~# a:context.error_pattern
+		return s:create_searchresult()
+	endif
+
+	" サイト側のエンコード形式 -> &encへのデコード
+	let item.description = iconv(_, a:context.site_encode, &enc)
 
 	" 得られたデータから、必要な部分のテキストのみを抽出
-	let description = s:stripTag(a:context, l:result)
-	if s:is_empty_description(description)
-		let description = []
-	endif
-
+	call s:strip_searchresult(item, a:context)
 	" 必要に応じてキャッシュ登録
-	call s:registerCache(a:context, a:word, description)
-	return [a:word, description]
+	call s:register_cache(a:context.name, item)
+	return item
 endfunction
 "}}}
 
@@ -877,123 +1185,160 @@ function! s:selected_text(...)"{{{
   return a:0 && a:1 ? [_, _t] : _
 endfunction"}}}
 
+function! s:search(name, word)"{{{
+	if len(a:word) == 0
+		return {}
+	endif
+	if a:name == 'internal'
+		" 内部検索
+		let item = s:getDescription(a:word, g:CODDatabasePath)
+		if s:is_empty_searchresult(item) && s:has_default_engine()
+			" 見つからなかった場合はデフォルトの検索エンジンを使って外部から取得してみる
+			let item = s:getDescriptionFromExternal(s:get_default_engine(), a:word)
+		endif
+	elseif s:has_external_engine(a:name)
+		" 外部検索
+		let item = s:getDescriptionFromExternal(s:get_external_engine(a:name), a:word)
+	else
+		return {}
+	endif
+	if s:is_empty_searchresult(item)
+		call s:echoerr("単語は見つかりませんでした: " . a:word)
+	endif
+	return item
+endfunction"}}}
+
+" パラメータで指定されたキーワードを調べる
+" 指定されなかった場合はプロンプト入力
+function! s:search_word(name, ...)"{{{
+	let word = len(a:000) == 0 ? input("単語を入力:") : join(a:000, ' ')
+	let item = s:search(a:name, word)
+	if s:is_empty_searchresult(item)
+		return 1
+	endif
+	call cursoroverdictionary#open(0, a:name)
+	call s:update(a:name, item)
+	return 0
+endfunction"}}}
 " 選択されたテキストを調べる
 function! cursoroverdictionary#selected()"{{{
-	let word = s:selected_text()
-	if len(word) == 0
-		return
-	endif
-
-	let [ keyword, description ] = s:getDescription(word, g:CODDatabasePath)
-	if len(description) == 0 && s:has_default_engine()
-		" 見つからなかった場合はデフォルトの検索エンジンを使って外部から取得してみる
-		let [ keyword, description ] = s:getDescriptionFromExternal(s:get_default_engine(), word)
-	endif
-	if len(description) == 0
-		call s:echoerr("単語は見つかりませんでした: " . word)
-		return
-	endif
-
-	call cursoroverdictionary#open(0)
-
-	call s:set_current_word(expand('<cword>'))
-	call s:update_window(keyword, description)
-
-"	normal! gv
+	call cursoroverdictionary#selected_ex('internal')
 endfunction"}}}
 
 " 外部検索エンジンで選択されたテキストを調べる
 function! cursoroverdictionary#selected_ex(name)"{{{
-	let word = s:selected_text()
-	if len(word) == 0
-		return
-	endif
-
-	" 見つからなかった場合は外部から取得してみる
-	if s:has_external_engine(a:name) == 0
-		return
-	endif
-
-	let [ keyword, description ] = s:getDescriptionFromExternal(s:external_engines[a:name], word)
-	if len(description) == 0
-		call s:echoerr("単語は見つかりませんでした: " . word)
-		return
-	endif
-
-	call cursoroverdictionary#open(0)
-
-	call s:set_current_word(expand('<cword>'))
-	call s:update_window(keyword, description)
-
-"	normal! gv
+	let text = s:selected_text()
+	if len(text) == 0 | return | endif
+	return cursoroverdictionary#search_keyword_ex(a:name, text)
 endfunction"}}}
 
 " パラメータで指定されたキーワードを調べる
 " 指定されなかった場合はプロンプト入力
 function! cursoroverdictionary#search_keyword(...)"{{{
-	let word = ''
-	if a:0 == 0
-		let word = input("単語を入力:")
-		if len(word) == ''
-			return 
-		endif
-	else
-		let word = join(a:000, ' ')
-	endif
-
-	let [ keyword, description ] = s:getDescription(word, g:CODDatabasePath)
-	if len(description) == 0 && s:has_default_engine()
-		" 見つからなかった場合は外部から取得してみる
-		let [ keyword, description ] = s:getDescriptionFromExternal(s:get_default_engine(), word)
-	endif
-	if len(description) == 0
-		call s:echoerr("単語は見つかりませんでした: " . word)
-		return
-	endif
-
-	call cursoroverdictionary#open(0)
-
-	" ここで現在のカーソル位置の単語をb:last_word変数に登録しておく
-	" (そうしないと、CursorMovedイベントが発生してウインドウの内容が上書きされてしまう)
-	call s:set_current_word(expand('<cword>'))
-	call s:update_window(keyword, description)
+	return call('cursoroverdictionary#search_keyword_ex', ['internal']+a:000)
 endfunction"}}}
 
 " パラメータで指定されたキーワードを調べる
 " 指定されなかった場合はプロンプト入力
 function! cursoroverdictionary#search_keyword_ex(name, ...)"{{{
-	let word = ''
-	if a:0 == 0
-		let word = input("単語を入力:")
-		if len(word) == ''
-			return 
-		endif
-	else
-		let word = join(a:000, ' ')
+	let his = s:get_recent_history(0)
+	let l:pos = s:get_current_position(a:name)
+
+	let item = call('s:search_word', [ a:name ] + a:000)
+
+	let his.pos = l:pos
+	return item
+endfunction"}}}
+
+"	位置情報があったらカーソル位置を復元
+function! s:restore_cursor_position(item)"{{{
+	let pos = get(a:item, "pos", [])
+	if len(pos) == 4
+		call setpos(".", pos)
+	endif
+endfunction"}}}
+
+function s:move_history(offset)"{{{
+	let next_index= s:search_history_index + a:offset
+	if next_index < 0 || len(s:search_history_list) <= next_index
+		return 1
 	endif
 
-	if s:has_external_engine(a:name) == 0
-		return
-	endif
+	" 履歴をたどる前に現在の履歴における位置を記憶
+	let cur_item = s:get_recent_history(0)
+	let cur_item.pos = getpos(".")
 
-	let [ keyword, description ] = s:getDescriptionFromExternal(s:external_engines[a:name], word)
-	if len(description) == 0
-		call s:echoerr("単語は見つかりませんでした: " . word)
-		return
-	endif
+	let s:search_history_index = next_index
+	let his = s:get_recent_history(0)
+	call s:search_word(his.engine_name, his.keyword)
+	call s:restore_cursor_position(his)
+endfunction"}}}
 
-	call cursoroverdictionary#open(0)
+" 「前に戻る」
+function! cursoroverdictionary#previous_page()"{{{
+	return s:move_history(-1)
+endfunction"}}}
 
-	" ここで現在のカーソル位置の単語をb:last_word変数に登録しておく
-	" (そうしないと、CursorMovedイベントが発生してウインドウの内容が上書きされてしまう)
-	call s:set_current_word(expand('<cword>'))
-	call s:update_window(keyword, description)
+" 「次に進む」
+function! cursoroverdictionary#next_page()"{{{
+	return s:move_history(1)
 endfunction"}}}
 
 " 外部検索エンジンの設定
 let s:external_engines = {}
 " デフォルト
 let s:default_engine = ''
+
+
+" 履歴保持件数
+let s:history_max_count = 100
+" 検索結果データをを要素とするリスト
+let s:search_history_list = []
+" s:search_history_listの現在位置を示すインデックス値
+let s:search_history_index = -1
+
+" 検索履歴を追加
+function! s:add_search_history(item) "{{{
+
+	" 検索文字列が空だったら何もしない
+	if len(a:item.keyword) == 0
+		return
+	endif
+
+	" 履歴の重複チェック
+	if s:search_history_index >= 0 && a:item.keyword == s:search_history_list[s:search_history_index].keyword
+		return
+	endif
+
+	let s:search_history_list = s:search_history_list[ : s:search_history_index]
+
+	call insert(s:search_history_list, a:item, s:search_history_index + 1)
+
+	if len(s:search_history_list) > s:history_max_count
+		let s:search_history_list = s:search_history_list[ len(s:search_history_list)-s:history_max_count : ]
+	else
+		let s:search_history_index += 1
+	endif
+endfunction "}}}
+
+" 検索履歴データを取得
+function! s:get_recent_history(offset)"{{{
+	let index = s:search_history_index + a:offset
+	if index < 0 || len(s:search_history_list) < index
+		return s:create_searchresult()
+	endif
+
+	return s:search_history_list[index]
+endfunction"}}}
+
+" 直近で使用した外部検索エンジン名を取得
+function! s:get_recent_engine()"{{{
+	if len(s:search_history_list) == 0
+		return ''
+	endif
+	let item = s:get_recent_history(0)
+	return item.engine_name
+endfunction"}}}
 
 " 指定された外部検索エンジンがないか調べ、なければエラーメッセージ表示
 function! s:has_external_engine(name) "{{{
@@ -1004,6 +1349,26 @@ function! s:has_external_engine(name) "{{{
 	return 1
 endfunction
 "}}}
+
+function! s:get_external_engine(name)"{{{
+	return get(s:external_engines, a:name, {})
+endfunction"}}}
+
+" 検索エンジンデータに属性を設定
+function! s:set_engine_attribute(engine_name, attr_name, data, ...) "{{{
+	if s:has_external_engine(a:engine_name) == 0
+		return 0
+	endif
+	let context = s:external_engines[a:engine_name]
+
+	" 4番目の引数で0が指定された場合は、属性の上書きは行わない
+	if has_key(context, a:attr_name) && len(a:000) > 0 && a:1 == 0
+		return 1
+	endif
+
+	let context[a:attr_name] = a:data
+	return 1
+endfunction "}}}
 
 " 外部検索エンジンの登録
 function! cursoroverdictionary#add(name, url, urlenc, siteenc) "{{{
@@ -1016,6 +1381,8 @@ function! cursoroverdictionary#add(name, url, urlenc, siteenc) "{{{
 	let context.url = a:url
 	let context.url_encode = a:urlenc
 	let context.site_encode = a:siteenc
+	let context.start_pattern = ''
+	let context.end_pattern = ''
 
 	call s:add_operator_user(a:name)
 endfunction
@@ -1026,35 +1393,26 @@ function! cursoroverdictionary#set_trim_pattern(name, start, end) "{{{
 	if s:has_external_engine(a:name) == 0
 		return 0
 	endif
-
 	let context = s:external_engines[a:name]
-	let context.start_pattern = a:start
-	let context.end_pattern = a:end
-
+	call extend(context, {"start_pattern":a:start, "end_pattern":a:end})
 	return 1
 endfunction
 "}}}
 
 " プロキシを使う設定
-function! cursoroverdictionary#enable_proxy(name, proxy) "{{{
-	if s:has_external_engine(a:name) == 0
-		return 0
-	endif
-	let context = s:external_engines[a:name]
-	let context.proxy = a:proxy
-	return 1
+function! cursoroverdictionary#enable_proxy(name, proxy, ...) "{{{
+	return s:set_engine_attribute(a:name, "proxy", a:proxy, s:ow(a:000))
 endfunction
 "}}}
 
+function! s:ow(arg)"{{{
+	return len(a:arg) ? a:arg[0] : 1
+endfunction"}}}
+
 " 外部URLへリクエストを送る際のUSER-AGENTを設定
 " (設定しない場合はcURLのデフォルトを使用)
-function! cursoroverdictionary#set_user_agent(name, agent) "{{{
-	if s:has_external_engine(a:name) == 0
-		return 0
-	endif
-	let context = s:external_engines[a:name]
-	let context.user_agent = a:agent
-	return 1
+function! cursoroverdictionary#set_user_agent(name, agent, ...) "{{{
+	return s:set_engine_attribute(a:name, "user_agent", a:agent, s:ow(a:000))
 endfunction
 "}}}
 
@@ -1067,6 +1425,37 @@ function! cursoroverdictionary#set_default_engine(name) "{{{
 	return 1
 endfunction
 "}}}
+
+" 結果表示ウインドウ新規表示時にフォーカスを移動するかどうかを設定します
+function! cursoroverdictionary#set_windowfocus(name, on, ...) "{{{
+	return s:set_engine_attribute(a:name, "windowfocus", a:on, s:ow(a:000))
+endfunction "}}}
+
+" ウインドウの高さを設定
+function! cursoroverdictionary#set_windowheight(name, height, ...)"{{{
+	return s:set_engine_attribute(a:name, "windowheight", a:height, s:ow(a:000))
+endfunction"}}}
+
+" ウインドウ表示方向を指定
+function! cursoroverdictionary#set_windowdirection(name, dir, ...)"{{{
+	return s:set_engine_attribute(a:name, "direction", a:dir, s:ow(a:000))
+endfunction"}}}
+
+" 結果表示バッファ名を指定
+function! cursoroverdictionary#set_buffername(name, bufname, ...)"{{{
+	return s:set_engine_attribute(a:name, 'bufname', a:bufname, s:ow(a:000))
+endfunction"}}}
+
+" エラーとするパターンを設定
+function! cursoroverdictionary#set_errorpattern(name, pattern, ...)"{{{
+	return s:set_engine_attribute(a:name, 'error_pattern', a:pattern, s:ow(a:000))
+endfunction"}}}
+
+" バッファ更新時に実行する処理を設定
+function! cursoroverdictionary#set_updateevent(name, enterfunc, leavefunc, ...) "{{{
+	call s:set_engine_attribute(a:name, 'enter_function', a:enterfunc, s:ow(a:000))
+	call s:set_engine_attribute(a:name, 'leave_function', a:leavefunc, s:ow(a:000))
+endfunction "}}}
 
 " デフォルトの外部検索エンジンを取得します
 function! s:get_default_engine() "{{{
@@ -1107,10 +1496,14 @@ function! cursoroverdictionary#operator_default(motion_wise) "{{{
 	if &cb == "unnamed"
 		call setreg('*', rast, rastt)
 	endif
-
 	return cursoroverdictionary#search_keyword_ex(s:operator_user_engine, word)
 endfunction
 "}}}
+
+function! cursoroverdictionary#operator_last(motion_wise) "{{{
+	call cursoroverdictionary#set_engine_in_operator_user(s:get_recent_engine())
+	return cursoroverdictionary#operator_default(a:motion_wise)
+endfunction "}}}
 
 " 任意の検索エンジンによる検索処理をoperator-userから呼び出せるようにします
 function! s:add_operator_user(name) "{{{
@@ -1142,19 +1535,6 @@ function! s:Uni_nr2enc_char(charcode)"{{{
     let char = strtrans(iconv(char, 'utf-8', &encoding))
   endif
   return char
-endfunction"}}}
-
-function! s:AL_decode_entityreference_with_range(range)"{{{
-  " Decode entity reference for range
-  silent! execute a:range 's/&gt;/>/g'
-  silent! execute a:range 's/&lt;/</g'
-  silent! execute a:range 's/&quot;/"/g'
-  silent! execute a:range "s/&apos;/'/g"
-  silent! execute a:range 's/&nbsp;/ /g'
-  silent! execute a:range 's/&yen;/\&#65509;/g'
-  silent! execute a:range 's/&#x\(\x\+\);/\=s:Uni_nr2enc_char(submatch(0))/g'
-  silent! execute a:range 's/&#\(\d\+\);/\=s:Uni_nr2enc_char(submatch(0))/g'
-  silent! execute a:range 's/&amp;/\&/g'
 endfunction"}}}
 
 " vim:foldmethod=marker

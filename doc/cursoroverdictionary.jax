@@ -1,7 +1,7 @@
 *cursoroverdictionary.txt*	辞書引き+αスクリプト
 
-Last change: 2009 Oct 09
-Version : 0.0.9
+Last change: 2009 Oct 24
+Version : 0.1
 Copyright (C) 2009 ampmmn <http://d.hatena.ne.jp/ampmmn>
 
 目次:
@@ -9,7 +9,8 @@ Copyright (C) 2009 ampmmn <http://d.hatena.ne.jp/ampmmn>
   基本的な使い方............|cod-usage|
   コマンド..................|cod-function|
   グローバル変数............|cod-variables|
-  マッピング................|cod-mapping|
+  グローバルマッピング......|cod-global-mapping|
+  ローカルマッピング........|cod-local-mapping|
   外部検索エンジンの登録....|cod-register-external|
   オペレータ登録............|cod-operator|
   CHANGELOG.................|cod-changelog|
@@ -104,21 +105,34 @@ CODOpenコマンドを実行すると、訳文を表示するための出力ウ�
 
 :CODSelected				*:CODSelected*
 	選択したテキストを内部データベースを使って辞書検索します。
-	複数の単語を選択して実行することにより、(単語ではなく)語句を検索することもできます。
+	複数の単語を選択して実行することにより、
+	(単語ではなく)語句を検索することもできます。
 
-:CODSearch {external-engine} [keyword]	*:CODSearch*
+:CODSearch [keyword]			*:CODSearch*
 	[keyword]を内部データベースを使って辞書検索します。
 	[keyword]を指定しなかった場合は、単語を入力するプロンプトが表示されま
 	す。
 
-:CODSelectedEx				*:CODSelectedEx*
-	あらかじめ設定した外部検索エンジンを使って、選択したテキストを検索します。
-	複数の単語を選択して実行することにより、(単語ではなく)語句を検索することもできます。
+:CODSelectedEx	{external-engine}	*:CODSelectedEx*
+	あらかじめ設定した外部検索エンジン{external-engine}を使って、
+	選択したテキストを検索します。
+	複数の単語を選択して実行することにより、
+	(単語ではなく)語句を検索することもできます。
 
 :CODSearchEx {external-engine} [keyword]	*:CODSearchEx*
-	あらかじめ設定した外部検索エンジンを使って[keyword]を辞書検索します。
+	あらかじめ設定した外部検索エンジン{external-engine}を使って、
+	[keyword]を辞書検索します。
 	[keyword]を指定しなかった場合は、単語を入力するプロンプトが表示されま
 	す。
+
+:CODPrevPage				*:CODPrevPage*
+	前に表示していたキーワードの内容を表示します。
+	検索履歴は最大100件まで保持されます。
+	それを超える場合は古い内容が削除されます。
+
+:CODNextPage				*:CODNextPage*
+	CODPrevPageコマンドで前の検索履歴を表示していた場合に、
+	次の検索履歴の内容を表示します。
 
 ==============================================================================
 グローバル変数				*cod-variables*
@@ -166,12 +180,12 @@ g:CODPermanentCachePath			*g:CODPermanentCachePath*
 	そのため、外部から得られる内容に更新があった場合でも、
 	それは反映されなくなります。
 	
-	なお、キャッシュ機能を利用するには|+python|が必要です。
+	キャッシュ機能を利用するには|+python|が必要です。
 
 ==============================================================================
-マッピング				*cod-mapping*
+グローバルマッピング				*cod-global-mapping*
 
-特にこのスクリプト側で設定しているマッピングはありません。
+特にこのスクリプト側で設定しているグローバルなマッピングはありません。
 
 .vimrcで下記のように設定しておけば、選択した単語・語句を簡単に調べられるように
 なって便利です。
@@ -188,21 +202,49 @@ g:CODPermanentCachePath			*g:CODPermanentCachePath*
 	nnoremap <silent> {任意のキー} :CODToggle<cr>
 
 ==============================================================================
+ローカルマッピング				*cod-local-mapping*
+
+検索結果表示バッファ内のローカルなマッピング
+
+	H ...... 検索履歴から前のキーワードを表示
+	L ...... 検索履歴から次のキーワードを表示
+	K ...... カーソル位置の単語を検索
+	<CR> ... カーソル位置にマーカーがある場合にマーカーの単語を検索
+	q ...... 検索結果表示バッファ(とウインドウ)を閉じる
+	c ...... 検索のためのオペレータ(operator-userが入っている場合のみ)
+
+==============================================================================
 外部検索エンジンの登録			*cod-register-external*
 
 外部検索エンジンの登録は下記の関数を用いて行います。
 
 
-cursoroverdictionary#add(name, url, urlenc, siteenc)
+cursoroverdictionary#add(name, target, urlenc, siteenc)
 	外部検索エンジンを登録します。
 	
 	name		(文字列)
 		検索エンジンの名前です。
 		ここで指定した名前で検索エンジンの識別を行います。
 	
-	url		(文字列)
-		アクセス先のURLを指定します。
-		{word}と書くと、その部分が選択文字列に置換されます。
+	target		(文字列)
+		アクセス先の(URL|シェルコマンド|関数名)を指定します。
+		
+		文字列の先頭が「http(s)://」で始まる場合はURLであるものとみなし、
+		cURLを用いたアクセスを行います。
+		文字列の先頭が「*」で始まる場合は、
+		
+		その後の文字列が関数名であるものとみなし、
+		その関数を呼び出し、関数戻り値を検索結果として用います。
+		
+		関数の形式: funcname(keyword)
+		  引数は一つで、この引数には検索キーワードが渡されます。
+		  戻り値で検索結果として表示する文字列を返します。
+		  検索結果が見つからなかった場合は、空文字列を返します。
+		
+		それ以外の場合は、シェルコマンドとして実行します。
+		シェルコマンド実行時の標準出力の内容を検索結果として用います。
+		
+		{word}と書くとその部分を選択文字列(検索キーワード)に置換します。
 	
 	urlenc		(文字列)
 		URL文字列をエスケープする際のエンコード形式を指定します。
@@ -240,6 +282,11 @@ cursoroverdictionary#enable_proxy(name, proxy)
 	サイトにアクセスする際にプロキシサーバを経由する場合に、
 	プロキシサーバを指定するために使用します。
 	
+	この関数でプロキシサーバを指定しない場合は、
+	環境変数$http_proxyの値をプロキシとして利用します。
+	enable_proxy関数でプロキシサーバを指定した場合は、
+	関数の設定値の方を優先します。
+	
 	name		(文字列)
 		検索エンジンの名前です。
 		cursoroverdictionary#add関数で登録した名前です。
@@ -248,7 +295,12 @@ cursoroverdictionary#enable_proxy(name, proxy)
 		プロキシサーバを「ホスト名:ポート番号」の形式で指定します。
 		例: proxyhost:8080
 
-cursoroverdictionary#set_user_agent(name, agent-name)
+	overwrite	(数値)
+		数値を指定し、かつ0を指定した場合は
+		既に設定値が存在する場合に設定を上書きしません。
+		このパラメータを指定しなかった場合は、設定を上書きします。
+
+cursoroverdictionary#set_user_agent(name, agent-name, [overwrite])
 	サイトにアクセスする際のUser-Agent文字列を指定します。
 	このスクリプトでは、外部サイトへのアクセスする処理でcURLを
 	使っていますが、アクセス先のサイトによってはUser-Agentの内容で
@@ -265,6 +317,11 @@ cursoroverdictionary#set_user_agent(name, agent-name)
 	
 	agent-name	(文字列)
 		User-Agent名を指定します。
+
+	overwrite	(数値)
+		数値を指定し、かつ0を指定した場合は
+		既に設定値が存在する場合に設定を上書きしません。
+		このパラメータを指定しなかった場合は、設定を上書きします。
 
 cursoroverdictionary#set_default_engine(name)
 	:CODSelectedコマンド、:CODSearchコマンドを使った検索では
@@ -283,15 +340,128 @@ cursoroverdictionary#set_default_engine(name)
 	\ "http://ja.wikipedia.org/wiki/{word}", "utf-8", "utf-8")
 	call cursoroverdictionary#set_trim_pattern("wp",
 	\ '<div id="bodyContent">', '\t\t</div>')
-
+	
 	" Wikipedia英語版で検索
 	call cursoroverdictionary#add("wp_en", 
 	\ "http://en.wikipedia.org/wiki/{word}", "utf-8", "utf-8")
 	call cursoroverdictionary#set_trim_pattern("wp_en",
 	\ '<div id="bodyContent">', '\t\t</div>')
-
+	
 	" 
 	call cursoroverdictionary#set_default_engine("wp")
+
+cursoroverdictionary#set_windowfocus(name, on, [overwrite])
+	結果ウインドウに検索結果を表示する際に、カーソルのフォーカスを
+	結果ウインドウに移動するかどうかを指定します。
+	
+	この関数を使って指定しなかった場合フォーカスは移動しません。
+
+	name		(文字列)
+		検索エンジンの名前です。
+		cursoroverdictionary#add関数で登録した名前です。
+
+	on		(数値)
+		0を指定するとフォーカスを移動しません。
+		非0でフォーカスを移動します。
+
+	overwrite	(数値)
+		数値を指定し、かつ0を指定した場合は
+		既に設定値が存在する場合に設定を上書きしません。
+		このパラメータを指定しなかった場合は、設定を上書きします。
+
+cursoroverdictionary#set_windowheight(name, height, [overwrite])
+	結果ウインドウのウインドウ高さを指定します。
+
+	この関数で指定しなかった場合、g:CODWindowHeightの値で
+	ウインドウを作成します。
+
+	name		(文字列)
+		検索エンジンの名前です。
+		cursoroverdictionary#add関数で登録した名前です。
+
+	height		(数値)
+		ウインドウの高さ
+
+	overwrite	(数値)
+		数値を指定し、かつ0を指定した場合は
+		既に設定値が存在する場合に設定を上書きしません。
+		このパラメータを指定しなかった場合は、設定を上書きします。
+
+cursoroverdictionary#set_windowdirection(name, dir, [overwrite])
+	結果ウインドウを表示する方向を指定します。
+	
+	この関数で指定しなかった場合、g:CODDirectionの値を使用します。
+
+	name		(文字列)
+		検索エンジンの名前です。
+		cursoroverdictionary#add関数で登録した名前です。
+
+	dir		(文字列)
+		ウインドウを表示する方向
+		
+		上に水平分割表示: ''
+		下に水平分割表示: 'rightbelow'
+		左に垂直分割表示: 'vertical'
+		右に垂直分割表示: 'vertical rightbelow'
+
+	overwrite	(数値)
+		数値を指定し、かつ0を指定した場合は
+		既に設定値が存在する場合に設定を上書きしません。
+		このパラメータを指定しなかった場合は、設定を上書きします。
+
+cursoroverdictionary#set_buffername(name, bufname, [overwrite])
+	結果ウインドウのバッファ名を指定します。
+	外部検索エンジンによって異なるバッファで表示するために使用します。
+	特に指定しない場合は"CursorOverDictionary"という名前のバッファを作成しま
+	す。
+
+	name		(文字列)
+		検索エンジンの名前です。
+		cursoroverdictionary#add関数で登録した名前です。
+
+	bufname		(文字列)
+		バッファ名
+
+	overwrite	(数値)
+		数値を指定し、かつ0を指定した場合は
+		既に設定値が存在する場合に設定を上書きしません。
+		このパラメータを指定しなかった場合は、設定を上書きします。
+
+cursoroverdictionary#set_errorpattern(name, pattern, [overwrite])
+	キーワード検索を失敗とみなすためのパターンを指定します。
+	検索結果として得られた文字列とpatternが一致する場合に、
+	検索失敗とします。
+
+	name		(文字列)
+		検索エンジンの名前です。
+		cursoroverdictionary#add関数で登録した名前です。
+
+	pattern		(文字列)
+		パターン文字列
+
+	overwrite	(数値)
+		数値を指定し、かつ0を指定した場合は
+		既に設定値が存在する場合に設定を上書きしません。
+		このパラメータを指定しなかった場合は、設定を上書きします。
+
+cursoroverdictionary#set_updateevent(name, enterfunc, leavefunc, [overwrite])
+	結果ウインドウ更新時に実行する処理を指定します。
+
+	name		(文字列)
+		検索エンジンの名前です。
+		cursoroverdictionary#add関数で登録した名前です。
+
+	enterfunc	(文字列)
+		検索結果表示前に実行する関数名
+
+	leavefunc	(文字列)
+		他の検索結果への遷移前に実行する関数名
+		enterfuncで変更した設定を元に戻すために使います。
+
+	overwrite	(数値)
+		数値を指定し、かつ0を指定した場合は
+		既に設定値が存在する場合に設定を上書きしません。
+		このパラメータを指定しなかった場合は、設定を上書きします。
 
 ==============================================================================
 オペレータ登録				*cod-operator*
@@ -322,6 +492,7 @@ map W <Plug>(operator-cod-wp)
 ==============================================================================
 CHANGELOG				*cod-changelog*
 
+	0.1		2009-10-24	Several features added.
 	0.0.9		2009-10-09	Add external search result cache.
 	0.0.8		2009-10-05	bug fix for garbled message.
 	0.0.7		2009-10-03	bug fix
